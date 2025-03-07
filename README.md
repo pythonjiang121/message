@@ -103,7 +103,7 @@ pip install pandas openpyxl
 
 ## 联系方式
 如有问题或建议，请联系：
-- 邮箱：your-email@example.com
+- 邮箱：zhengdongjiang06@gmail.com
 - GitHub: [pythonjiang121](https://github.com/pythonjiang121)
 
 ---
