@@ -118,6 +118,9 @@ if __name__ == "__main__":
         ("代开发票优惠", False),
         ("加V12345678", False),
         ("點擊查看", False),
+        ("點擊查看", False),
+        ("點擊查看", False),
+        ("點擊查看", False)
     ]
 
     for content, expected in test_cases:
