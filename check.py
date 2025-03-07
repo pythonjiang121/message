@@ -196,52 +196,24 @@ def process_excel_file(input_file: str, output_file: str = None) -> str:
     print(f"内容审核不通过: {content_failed} 条")
     print(f"业务审核不通过: {business_failed} 条")
     
-    # 对比原始审核结果
-    original_passed = sum(1 for result in df['审核结果'] if result == '通过')
-    original_failed = total - original_passed
-    
-    print("\n原始审核结果对比:")
-    print(f"原始通过: {original_passed} 条 ({original_passed/total*100:.2f}%)")
-    print(f"原始拒绝: {original_failed} 条 ({original_failed/total*100:.2f}%)")
-    print(f"\n差异分析:")
-    
-    # 详细分析差异
-    differences = 0
-    false_positives = 0  # 我们通过但原始拒绝的数量
-    false_negatives = 0  # 我们拒绝但原始通过的数量
-    
-    print("\n前5条差异案例:")
-    diff_count = 0
-    for i, ((passed, result_dict), original) in enumerate(zip(results, df['审核结果'])):
-        our_result = "通过" if passed else "驳回"
-        if our_result != original:
-            differences += 1
-            if our_result == "通过" and original == "驳回":
-                false_positives += 1
-            elif our_result == "驳回" and original == "通过":
-                false_negatives += 1
-            
-            if diff_count < 5:
-                print(f"\n差异案例 {diff_count + 1}:")
-                print(f"短信签名: {df.iloc[i]['短信签名']}")
-                print(f"短信内容: {df.iloc[i]['短信内容']}")
-                print(f"业务类型: {df.iloc[i]['客户业务类型']}")
-                print(f"账户类型: {df.iloc[i]['账户类型']}")
-                print(f"原始审核结果: {original}")
-                print(f"当前审核结果: {our_result}")
-                print("审核详情:")
-                if not result_dict['签名审核'][0]:
-                    print(f"- 签名审核: {result_dict['签名审核'][1]}")
-                if not result_dict['内容审核'][0]:
-                    print(f"- 内容审核: {result_dict['内容审核'][1]}")
-                if not result_dict['业务审核'][0]:
-                    print(f"- 业务审核: {result_dict['业务审核'][1]}")
-                diff_count += 1
-    
-    print(f"\n总体差异统计:")
-    print(f"差异总数: {differences} 条 ({differences/total*100:.2f}%)")
-    print(f"误通过数(False Positives): {false_positives} 条 ({false_positives/total*100:.2f}%)")
-    print(f"误拒绝数(False Negatives): {false_negatives} 条 ({false_negatives/total*100:.2f}%)")
+    # 输出前5条失败的详细原因
+    print("\n前5条失败案例的详细原因:")
+    failed_count = 0
+    for i, (passed, result_dict) in enumerate(results):
+        if not passed and failed_count < 5:
+            print(f"\n失败案例 {failed_count + 1}:")
+            print(f"短信签名: {df.iloc[i]['短信签名']}")
+            print(f"短信内容: {df.iloc[i]['短信内容']}")
+            print(f"业务类型: {df.iloc[i]['客户业务类型']}")
+            print(f"账户类型: {df.iloc[i]['账户类型']}")
+            print("失败原因:")
+            if not result_dict['签名审核'][0]:
+                print(f"- 签名审核: {result_dict['签名审核'][1]}")
+            if not result_dict['内容审核'][0]:
+                print(f"- 内容审核: {result_dict['内容审核'][1]}")
+            if not result_dict['业务审核'][0]:
+                print(f"- 业务审核: {result_dict['业务审核'][1]}")
+            failed_count += 1
     
     # 5. 导出结果
     return checker.export_results(df, results, output_file)
