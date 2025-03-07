@@ -84,58 +84,34 @@ class SMSChecker:
         Returns:
             str: 输出文件路径
         """
-        try:
-            # 添加审核结果列
-            df = df.copy()  # 创建副本避免修改原始数据
-            
-            # 安全地获取结果
-            def get_audit_result(result_dict, key):
-                if key not in result_dict:
-                    return '未知'
-                return '通过' if result_dict[key][0] else '驳回'
-            
-            # 添加结果列
-            df['总体审核结果'] = ['通过' if passed else '驳回' for passed, _ in results]
-            df['签名审核结果'] = ['通过' if r[1].get('签名审核', (False, '未知'))[0] else r[1].get('签名审核', (False, '未知'))[1] for _, r in results]
-            df['内容审核结果'] = ['通过' if r[1].get('内容审核', (False, '未知'))[0] else r[1].get('内容审核', (False, '未知'))[1] for _, r in results]
-            df['业务审核结果'] = ['通过' if r[1].get('业务审核', (False, '未知'))[0] else '驳回' for _, r in results]
-            
-            # 使用当前工作目录
-            if output_file is None:
-                output_file = "审核结果.xlsx"
-            
-            print(f"\n正在保存审核结果...")
-            print(f"当前工作目录: {os.getcwd()}")
-            print(f"目标文件: {output_file}")
-            
-            # 尝试保存文件
-            df.to_excel(output_file, index=False, engine='openpyxl')
-            print(f"审核结果已成功保存为: {output_file}")
-            
-            # 验证文件是否成功创建
-            if os.path.exists(output_file):
-                print(f"文件成功创建，大小: {os.path.getsize(output_file)} 字节")
-            else:
-                print("警告：文件似乎没有被创建")
-            
-            return output_file
-            
-        except Exception as e:
-            print(f"保存文件时出错: {str(e)}")
-            print(f"错误类型: {type(e)}")
-            print(f"错误详细信息: {e.__dict__}")
-            
-            # 尝试使用时间戳作为文件名重试
+        # 添加审核结果列
+        df = df.copy()  # 创建副本避免修改原始数据
+        
+        # 添加结果列
+        df['总体审核结果'] = ['通过' if passed else '驳回' for passed, _ in results]
+        
+        # 安全地获取审核结果
+        def get_result(result_dict, key):
             try:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                retry_file = f"审核结果_{timestamp}.xlsx"
-                print(f"尝试使用新文件名保存: {retry_file}")
-                df.to_excel(retry_file, index=False, engine='openpyxl')
-                print(f"已成功保存为: {retry_file}")
-                return retry_file
-            except Exception as e2:
-                print(f"重试保存也失败: {str(e2)}")
-                raise e  # 抛出原始错误
+                return result_dict[key][1] if not result_dict[key][0] else '通过'
+            except (KeyError, IndexError, TypeError):
+                return '未知'
+        
+        # 添加各项审核结果
+        for i, (_, result_dict) in enumerate(results):
+            df.loc[i, '签名审核结果'] = get_result(result_dict, '签名审核')
+            df.loc[i, '内容审核结果'] = get_result(result_dict, '内容审核')
+            df.loc[i, '业务审核结果'] = get_result(result_dict, '业务审核')
+        
+        # 生成输出文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = f"审核结果_{timestamp}.xlsx"
+        
+        # 保存文件
+        print(f"\n正在保存审核结果到: {output_file}")
+        df.to_excel(output_file, index=False, engine='openpyxl')
+        
+        return output_file
 
 def process_excel_file(input_file: str, output_file: str = None) -> str:
     """
@@ -150,8 +126,8 @@ def process_excel_file(input_file: str, output_file: str = None) -> str:
     """
     print(f"开始处理文件: {input_file}")
     
-    # 1. 读取数据
     try:
+        # 1. 读取数据
         df = pd.read_excel(input_file)
         
         # 验证必需的列是否存在
@@ -186,54 +162,54 @@ def process_excel_file(input_file: str, output_file: str = None) -> str:
     print(f"拒绝: {failed} 条")
     print(f"通过率: {(passed/total*100):.2f}%")
     
-    # 统计各类型审核失败的数量
-    signature_failed = sum(1 for _, r in results if not r[1]['签名审核'][0])
-    content_failed = sum(1 for _, r in results if not r[1]['内容审核'][0])
-    business_failed = sum(1 for _, r in results if not r[1]['业务审核'][0])
-    
-    print("\n失败原因统计:")
-    print(f"签名审核不通过: {signature_failed} 条")
-    print(f"内容审核不通过: {content_failed} 条")
-    print(f"业务审核不通过: {business_failed} 条")
-    
-    # 输出前5条失败的详细原因
-    print("\n前5条失败案例的详细原因:")
-    failed_count = 0
-    for i, (passed, result_dict) in enumerate(results):
-        if not passed and failed_count < 5:
-            print(f"\n失败案例 {failed_count + 1}:")
-            print(f"短信签名: {df.iloc[i]['短信签名']}")
-            print(f"短信内容: {df.iloc[i]['短信内容']}")
-            print(f"业务类型: {df.iloc[i]['客户业务类型']}")
-            print(f"账户类型: {df.iloc[i]['账户类型']}")
-            print("失败原因:")
-            if not result_dict['签名审核'][0]:
-                print(f"- 签名审核: {result_dict['签名审核'][1]}")
-            if not result_dict['内容审核'][0]:
-                print(f"- 内容审核: {result_dict['内容审核'][1]}")
-            if not result_dict['业务审核'][0]:
-                print(f"- 业务审核: {result_dict['业务审核'][1]}")
-            failed_count += 1
-    
     # 5. 导出结果
     return checker.export_results(df, results, output_file)
 
 def main():
     """主函数"""
     try:
+        # 显示当前工作目录
+        print(f"当前工作目录: {os.getcwd()}")
+        
         # 处理命令行参数
         import sys
         # 默认输入文件名
-        default_input = "短信内容审核记录.xlsx"  # 在这里修改默认输入文件名
+        default_input = "短信内容审核记录.xlsx"
         input_file = sys.argv[1] if len(sys.argv) > 1 else default_input
         output_file = sys.argv[2] if len(sys.argv) > 2 else None
         
+        # 检查输入文件是否存在
+        if not os.path.exists(input_file):
+            print(f"错误: 输入文件 '{input_file}' 不存在")
+            print(f"当前目录下的文件:")
+            os.system('ls -l')
+            sys.exit(1)
+            
+        # 检查输入文件是否可读
+        if not os.access(input_file, os.R_OK):
+            print(f"错误: 没有权限读取文件 '{input_file}'")
+            sys.exit(1)
+            
         # 处理文件
-        output_path = process_excel_file(input_file, output_file)
-        print(f"\n处理完成！结果已保存至: {output_path}")
-        
+        try:
+            output_path = process_excel_file(input_file, output_file)
+            print(f"\n处理完成！结果已保存至: {output_path}")
+            
+            # 验证输出文件
+            if os.path.exists(output_path):
+                print(f"输出文件大小: {os.path.getsize(output_path)} 字节")
+            else:
+                print(f"警告: 输出文件似乎没有被创建")
+                
+        except Exception as e:
+            print(f"处理文件时出错: {str(e)}")
+            import traceback
+            print("详细错误信息:")
+            traceback.print_exc()
+            sys.exit(1)
+            
     except Exception as e:
-        print(f"错误: {str(e)}")
+        print(f"程序运行出错: {str(e)}")
         sys.exit(1)
 
 if __name__ == "__main__":
