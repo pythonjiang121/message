@@ -1,7 +1,6 @@
 from signature import validate_signature
 from content import SMSContentValidator
 from business import validate_business
-from account_type import validate_account
 from typing import Tuple, List, Dict
 import pandas as pd
 import json
@@ -40,7 +39,7 @@ class SMSChecker:
         results = {}
 
         # 特例判断：特定签名或客户账户直接通过
-        if signature == "饿了么" or account_type in ["巨辰移动行业", "河南旺呈三网行业", "巨辰移动会销（汽车4s）", "巨辰联通会销（汽车4s）"]:
+        if signature == "饿了么" or account_type in ["巨辰移动行业", "河南旺呈三网行业", "巨辰移动会销（汽车4s）", "巨辰联通会销（汽车4s）", "巨辰联通普通会销"]:
             results['签名审核'] = "特例直接通过"
             results['内容审核'] = "特例直接通过"
             results['业务审核'] = "特例直接通过"
