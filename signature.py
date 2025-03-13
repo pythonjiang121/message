@@ -1,7 +1,4 @@
-import json
 import re
-import requests
-import unittest
 from unittest.mock import patch
 
 

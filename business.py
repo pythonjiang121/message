@@ -1,5 +1,6 @@
 import re
 import json
+import jieba.posseg as pseg
 from typing import Tuple, Dict, List, Set
 
 class BusinessValidator:
@@ -91,6 +92,9 @@ class BusinessValidator:
         "到期", "清零", "兑换", "过期", "作废", "失效",
         "即将到期", "即将清零", "即将作废", "清理", "清空"
     }
+
+    # 新增下载和客服相关关键词
+    CUSTOMER_SERVICE_KEYWORDS: Set[str] = {  "微信搜索", "详询客服", "咨询客服", "联系客服", "添加客服"}
 
     def __init__(self):
         """初始化验证器，加载姓氏数据"""
@@ -189,9 +193,31 @@ class BusinessValidator:
             return False, "会销类短信不允许包含私人号码"
 
         # 验证积分到期相关内容
-        if any(point_word in content for point_word in self.POINTS_KEYWORDS) and \
-           any(action_word in content for action_word in self.POINTS_ACTION_KEYWORDS):
-            return False, "会销类短信不允许包含积分到期或清零相关内容"
+        #if any(point_word in content for point_word in self.POINTS_KEYWORDS) and \
+        #   any(action_word in content for action_word in self.POINTS_ACTION_KEYWORDS):
+        #    return False, "会销类短信不允许包含积分到期或清零相关内容"
+
+        # 验证抽奖相关内容
+        if any(keyword in content for keyword in self.LOTTERY_KEYWORDS):
+            return False, "会销类短信不允许包含抽奖相关内容"
+
+        # 会销-普通特殊验证
+        if business_type == "会销-普通":
+            # 验证客服相关内容
+            if any(keyword in content for keyword in self.CUSTOMER_SERVICE_KEYWORDS):
+                return False, "会销-普通类短信不允许添加客服相关内容"
+
+            if any(keyword in content for keyword in self.GAME_KEYWORDS):
+                return False, "会销-普通类短信不允许包含游戏相关内容"
+
+            if any(keyword in content for keyword in self.DATING_KEYWORDS):
+                return False, "会销-普通类短信不允许包含交友相关内容"
+
+            if any(keyword in signature for keyword in self.INSURANCE_KEYWORDS):
+                return False, "会销-普通类短信的签名不允许包含保险相关字样"
+
+            if any(keyword in signature for keyword in self.JEWELRY_KEYWORDS):
+                return False, "会销类短信的签名不允许包含黄金珠宝相关字样"
 
         # 通用验证
         for keywords, error_msg in [
@@ -209,20 +235,6 @@ class BusinessValidator:
         if all(keyword in content for keyword in self.WECHAT_KEYWORDS):
             return False, "会销类短信不允许包含关注公众号相关内容"
 
-        # 会销-普通特殊验证
-        if business_type == "会销-普通":
-            if any(keyword in content for keyword in self.GAME_KEYWORDS):
-                return False, "会销-普通类短信不允许包含游戏相关内容"
-
-            if any(keyword in content for keyword in self.DATING_KEYWORDS):
-                return False, "会销-普通类短信不允许包含交友相关内容"
-
-            if any(keyword in signature for keyword in self.INSURANCE_KEYWORDS):
-                return False, "会销-普通类短信的签名不允许包含保险相关字样"
-
-            if any(keyword in signature for keyword in self.JEWELRY_KEYWORDS):
-                return False, "会销类短信的签名不允许包含黄金珠宝相关字样"
-
         return True, "审核通过"
 
     def _validate_collection(self, content: str) -> Tuple[bool, str]:
@@ -237,18 +249,36 @@ class BusinessValidator:
         return bool(re.search(pattern, text))
 
     def _find_chinese_names(self, text: str) -> bool:
-        """查找中文姓名"""
-        # 移除白名单词
+        """
+        查找中文姓名（使用Jieba分词+规则过滤）
+        
+        Args:
+            text: 待检查的文本
+            
+        Returns:
+            bool: 如果找到中文姓名返回False，否则返回True
+        """
+        # 移除白名单词（避免误判，例如"公司名"中的"王"）
         for word in self.NAME_WHITELIST:
             text = text.replace(word, "")
-            
-        # 匹配三个中文字符
-        pattern = r'[\u4e00-\u9fa5]{3}'
-        for match in re.finditer(pattern, text):
-            name = match.group()
-            if name[0] in self.surnames:
-                return True
-        return False
+        
+        # 使用Jieba分词并标注词性（'nr'为人名）
+        words = list(pseg.cut(text))
+        
+        # 遍历分词结果查找人名
+        for i, pair in enumerate(words):
+            word, flag = pair.word, pair.flag
+            if flag == 'nr':  # 初步筛选人名
+                # 移除可能的标点或空格干扰
+                clean_name = re.sub(r'[^\u4e00-\u9fa5]', '', word)
+                
+                # 基本长度和姓氏检查
+                if not (2 <= len(clean_name) <= 4 and clean_name[0] in self.surnames):
+                    continue
+                               
+                return True  # 找到符合条件的姓名
+        
+        return False  # 未找到符合条件的姓名
 
 def validate_business(business_type: str, content: str, signature: str) -> Tuple[bool, str]:
     """
