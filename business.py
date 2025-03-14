@@ -8,7 +8,7 @@ class BusinessValidator:
     BUSINESS_TYPE_LIBRARY: Dict[str, List[str]] = {
         "行业": ["行业-通知", "行业-物流"],
         "会销": ["会销-普通", "会销-金融"],
-        "拉新": ["拉新-催收", "拉新-教育", "拉新-网贷", "拉新-展会", "拉新-医美"]
+        "拉新": ["拉新-催收", "拉新-教育", "拉新-网贷", "拉新-展会", "拉新-医美", "拉新-pos机"]
     }
 
     # 关键词常量定义
@@ -16,17 +16,17 @@ class BusinessValidator:
     INSURANCE_KEYWORDS: Set[str] = {"保险", "寿险", "车险", "意外险", "养老险", "医疗险", "财险"}
     MARKETING_KEYWORDS: Set[str] = {
         "优惠", "特惠", "红包", "权益", "购买", "付款",  "交纳", 
-        "积分", "抢购", "充值", "领取", "首冲", "购票", "尾款", 
-        "缴纳", "嘉宾", "预售", "现金", "限量","福利", "过期"
+        "积分", "抢购", "充值", "首冲", "购票", "尾款", 
+        "缴纳", "嘉宾", "预售", "现金", "限量","福利", "过期", "缴费"
     }
     SURVEY_KEYWORDS: Set[str] = {"问卷", "调查", "调研", "邀请",  }
     REAL_ESTATE_KEYWORDS: Set[str] = {
-        "房产", "地产", "楼盘", "房源", "售楼", "公寓", "住宅", "别墅",
+        "房产", "地产", "楼盘", "房源", "售楼", "公寓",  "别墅",
         "商铺", "写字楼", "购房", "房贷", "买房", "卖房", "租房",
         "房价", "面积", "户型", "地段", "学区房", "精装修", "毛坯"
     }
     JEWELRY_KEYWORDS: Set[str] = {"黄金", "珠宝"}
-    EDUCATION_KEYWORDS: Set[str] = {"课程", "培训", "讲解", "考前" , "上课", "练习册" }
+    EDUCATION_KEYWORDS: Set[str] = {"课程", "讲解", "考前" , "练习册" }
     ENROLLMENT_KEYWORDS: Set[str] = {
         "招生", "入学", "报考", "入学考试", "办学",
         "招收", "招收学生", "新生", "入学通知", "留学"
@@ -51,14 +51,14 @@ class BusinessValidator:
     LOGISTICS_KEYWORDS: Set[str] = {
         "快递", "物流", "派送", "配送", "运单", "包裹", "签收", "取件",
         "收件", "发件", "寄件", "运输", "送货", "揽收", "仓储", "仓库",
-        "货运", "提货"
+        "货运", "提货", "站点"
     }
     EXHIBITION_KEYWORDS: Set[str] = {
         "展会", "展览", "展销", "展位", "展台", "展馆", "展区", "展期",
         "参展", "观展", "博览会", "交易会", "展销会", "展示会", "展览馆",
         "家博会", "博览"
     }
-    WECHAT_KEYWORDS: Set[str] = {"公众号", "关注"}
+    WECHAT_KEYWORDS: Set[str] = {"微信", "公众号", "关注", "小程序"}
     NAME_WHITELIST: Set[str] = {"您好", "本人"}
 
     # 新增征兵相关词
@@ -95,6 +95,9 @@ class BusinessValidator:
 
     # 新增下载和客服相关关键词
     CUSTOMER_SERVICE_KEYWORDS: Set[str] = {  "微信搜索", "详询客服", "咨询客服", "联系客服", "添加客服"}
+
+    # 新增直播相关关键词
+    LIVE_STREAMING_KEYWORDS: Set[str] = {"直播", "带货", "主播", "观看直播", "直播间", "连麦"}
 
     def __init__(self):
         """初始化验证器，加载姓氏数据"""
@@ -151,7 +154,11 @@ class BusinessValidator:
                 return False, "行业-通知类短信的签名不允许包含旗舰店、专卖店等商业字样，需要人工审核"
             
             if any(keyword in signature for keyword in self.JEWELRY_KEYWORDS):
-                return False, "行业类短信的签名不允许包含黄金珠宝相关字样"
+                return False, "行业-通知类短信的签名不允许包含黄金珠宝相关字样"
+
+            # 验证直播相关内容
+            if any(keyword in content for keyword in self.LIVE_STREAMING_KEYWORDS):
+                return False, "行业-通知类短信不允许包含直播相关内容"
 
         # 验证物流类型
         if business_type == "行业-物流":
@@ -217,7 +224,7 @@ class BusinessValidator:
                 return False, "会销-普通类短信的签名不允许包含保险相关字样"
 
             if any(keyword in signature for keyword in self.JEWELRY_KEYWORDS):
-                return False, "会销类短信的签名不允许包含黄金珠宝相关字样"
+                return False, "会销-普通类短信的签名不允许包含黄金珠宝相关字样"
 
         # 通用验证
         for keywords, error_msg in [

@@ -1,7 +1,7 @@
 from signature import validate_signature
 from content import SMSContentValidator
 from business import validate_business
-from typing import Tuple, List, Dict
+from typing import Tuple, Dict
 import pandas as pd
 import json
 import os
@@ -158,7 +158,7 @@ def main():
     try:
         # 获取输入文件
         import sys
-        input_file = sys.argv[1] if len(sys.argv) > 1 else "3月反诈审核.xlsx"
+        input_file = sys.argv[1] if len(sys.argv) > 1 else "2月短信审核.xlsx"
         
         if not os.path.exists(input_file):
             print(f"错误: 输入文件 '{input_file}' 不存在")
