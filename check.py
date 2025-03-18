@@ -1,13 +1,11 @@
 from signature import validate_signature
 from content import SMSContentValidator
-from business import validate_business
+from business import validate_business, validate_account_type
 from typing import Tuple, Dict
 import pandas as pd
 import json
 import os
 from datetime import datetime
-
-
 
 class SMSChecker:
     def __init__(self):
@@ -31,19 +29,19 @@ class SMSChecker:
             signature: 短信签名
             content: 短信内容
             business_type: 业务类型
-            account_type : 客户账户
+            account_type: 客户类型
             
         Returns:
             Tuple[bool, Dict]: (是否通过审核, 各项审核结果及原因)
         """
         results = {}
 
-        # 特例判断：特定签名或客户账户直接通过
-        if signature == "饿了么" or account_type in ["巨辰移动行业", "河南旺呈三网行业", "巨辰移动会销（汽车4s）", "巨辰联通会销（汽车4s）", "巨辰联通普通会销"]:
+        # 特例判断：特定签名直接通过
+        if signature == "饿了么":
             results['签名审核'] = "特例直接通过"
             results['内容审核'] = "特例直接通过"
             results['业务审核'] = "特例直接通过"
-            results['账户审核'] = "特例直接通过"
+            results['客户类型审核'] = "特例直接通过"
             return True, results
             
         # 特定关键词签名直接通过
@@ -52,7 +50,7 @@ class SMSChecker:
             results['签名审核'] = "关键词直接通过"
             results['内容审核'] = "关键词直接通过"
             results['业务审核'] = "关键词直接通过"
-            results['账户审核'] = "关键词直接通过"
+            results['客户类型审核'] = "关键词直接通过"
             return True, results
         
         # 1. 签名审核
@@ -67,8 +65,12 @@ class SMSChecker:
         business_passed, business_reason = validate_business(business_type, content, signature)
         results['业务审核'] = business_reason
 
+        # 4. 客户类型审核
+        account_type_passed, account_type_reason = validate_account_type(account_type)
+        results['客户类型审核'] = account_type_reason
+
         # 判断最终审核结果
-        all_passed = sig_passed and content_passed and business_passed 
+        all_passed = sig_passed and content_passed and business_passed and account_type_passed
         return all_passed, results
 
 def process_excel(input_file: str) -> str:
@@ -93,7 +95,7 @@ def process_excel(input_file: str) -> str:
 
         # 读取Excel文件
         df = pd.read_excel(input_file, engine='openpyxl')
-        required_columns = ['短信签名', '短信内容', '客户业务类型', '客户账户']
+        required_columns = ['短信签名', '短信内容', '客户业务类型', '客户类型']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             raise ValueError(f"Excel文件缺少必需的列: {', '.join(missing_columns)}")
@@ -111,7 +113,7 @@ def process_excel(input_file: str) -> str:
                 row['短信签名'],
                 row['短信内容'],
                 row['客户业务类型'],
-                row['客户账户']
+                row['客户类型']
             )
             
             if passed:
@@ -125,11 +127,11 @@ def process_excel(input_file: str) -> str:
                 '签名审核结果': audit_results['签名审核'],
                 '内容审核结果': audit_results['内容审核'],
                 '业务审核结果': audit_results['业务审核'],
-                
+                '客户类型审核结果': audit_results['客户类型审核']
             })
         
         # 将结果添加到DataFrame
-        for key in ['总体审核结果', '签名审核结果', '内容审核结果', '业务审核结果']:
+        for key in ['总体审核结果', '签名审核结果', '内容审核结果', '业务审核结果', '客户类型审核结果']:
             df[key] = [result[key] for result in results]
         
         # 生成输出文件名
@@ -158,7 +160,7 @@ def main():
     try:
         # 获取输入文件
         import sys
-        input_file = sys.argv[1] if len(sys.argv) > 1 else "2月短信审核.xlsx"
+        input_file = sys.argv[1] if len(sys.argv) > 1 else "2月审核.xlsx"
         
         if not os.path.exists(input_file):
             print(f"错误: 输入文件 '{input_file}' 不存在")
@@ -174,3 +176,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
