@@ -99,44 +99,197 @@ class BusinessValidator:
     # 新增直播相关关键词
     LIVE_STREAMING_KEYWORDS: Set[str] = {"直播", "带货", "主播", "观看直播", "直播间", "连麦"}
 
+    # 定义评分规则
+    SCORE_RULES = {
+        # 基础分数
+        'BASE_SCORE': 100,
+        
+        # 扣分规则
+        'DEDUCTIONS': {
+            # 营销内容扣分规则
+            'MARKETING': {
+                'keywords': {'优惠', '特惠', '红包'}, # 轻度营销词
+                'score': -10,
+                'max_deduction': -30,  # 最大扣分
+                'strong_keywords': {'抢购', '限量', '福利'}, # 强营销词
+                'strong_score': -20,
+            },
+            
+            # 问卷调查扣分规则
+            'SURVEY': {
+                'keywords': {'问卷', '调查', '调研'},
+                'score': -30,
+                'max_deduction': -30,
+            },
+            
+            # 教育营销扣分规则
+            'EDUCATION': {
+                'keywords': {'课程', '讲解'},
+                'score': -20,
+                'weak_keywords': {'练习册'},  # 弱关键词
+                'weak_score': -10,
+            },
+            
+            # 其他规则可以类似定义...
+        },
+        
+        # 加分规则
+        'BONUSES': {
+            # 物流内容加分
+            'LOGISTICS': {
+                'keywords': {'快递', '物流', '派送', '配送'},
+                'score': 20,
+                'max_bonus': 30,
+            },
+            # 其他加分规则...
+        },
+        
+        # 直接否决规则（零容忍）
+        'ZERO_TOLERANCE': {
+            'PRIVATE_NUMBER': -100,  # 出现私人号码
+            'ILLEGAL_CONTENT': -100,  # 非法内容
+        },
+        
+        # 及格分数线
+        'PASS_SCORE': 60,
+    }
+
     def __init__(self):
-        """初始化验证器，加载姓氏数据"""
+        """初始化验证器"""
         try:
             with open('surnames.json', 'r', encoding='utf-8') as f:
                 self.surnames = set(json.load(f))
         except Exception as e:
             print(f"Warning: Could not load surnames.json: {e}")
             self.surnames = set()
+        self.current_account_type = None
+        self.score_details = {}  # 用于存储评分详情
 
-    def validate_business(self, business_type: str, content: str, signature: str) -> Tuple[bool, str]:
+    def validate_business(self, business_type: str, content: str, signature: str, account_type: str = None) -> Tuple[bool, str]:
         """
-        验证业务类型是否符合规则
-        
-        Args:
-            business_type: 客户业务类型
-            content: 短信内容
-            signature: 短信签名
-            
-        Returns:
-            (是否通过, 原因说明)
+        使用评分制验证业务类型
         """
+        self.current_account_type = account_type
         content = content.lower().replace(" ", "").replace("-", "")
         signature = signature.lower()
+        
+        # 重置评分详情
+        self.score_details = {
+            'base_score': self.SCORE_RULES['BASE_SCORE'],
+            'deductions': [],
+            'bonuses': [],
+            'final_score': self.SCORE_RULES['BASE_SCORE']
+        }
 
         # 获取业务类别
         business_category = self._get_business_category(business_type)
         if not business_category:
             return False, "未知的业务类型"
 
-        # 根据业务类别进行验证
+        # 根据业务类别进行评分
         if business_category == "行业":
-            return self._validate_industry(business_type, content, signature)
+            return self._score_industry(business_type, content, signature)
         elif business_category == "会销":
-            return self._validate_marketing(business_type, content, signature)
+            return self._score_marketing(business_type, content, signature)
         elif business_category == "拉新" and business_type == "拉新-催收":
-            return self._validate_collection(content)
+            return self._score_collection(content)
 
         return True, "审核通过"
+
+    def _score_industry(self, business_type: str, content: str, signature: str) -> Tuple[bool, str]:
+        """使用评分制验证行业类短信"""
+        score = self.SCORE_RULES['BASE_SCORE']
+        reasons = []
+
+        # 零容忍检查
+        if self._contains_private_number(content):
+            self.score_details['deductions'].append(('私人号码', self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']))
+            return False, "行业类短信不允许包含私人号码"
+
+        # 营销内容评分
+        if self.current_account_type != "云平台":  # 云平台跳过营销内容检查
+            marketing_score = self._calculate_marketing_score(content)
+            score += marketing_score
+            if marketing_score < 0:
+                reasons.append(f"营销内容 ({marketing_score}分)")
+
+        # 物流内容加分（针对行业-物流）
+        if business_type == "行业-物流":
+            logistics_score = self._calculate_logistics_score(content)
+            score += logistics_score
+            if logistics_score > 0:
+                reasons.append(f"物流相关内容 (+{logistics_score}分)")
+
+        # 其他内容评分
+        for rule_name, rule in self.SCORE_RULES['DEDUCTIONS'].items():
+            if rule_name != 'MARKETING':  # 营销已经单独处理
+                rule_score = self._calculate_rule_score(content, rule)
+                score += rule_score
+                if rule_score < 0:
+                    reasons.append(f"{rule_name}相关内容 ({rule_score}分)")
+
+        # 更新评分详情
+        self.score_details['final_score'] = score
+
+        # 判断是否通过
+        passed = score >= self.SCORE_RULES['PASS_SCORE']
+        if passed:
+            if reasons:
+                return True, f"审核通过 (总分: {score}分, 原因: {', '.join(reasons)})"
+            return True, f"审核通过 (总分: {score}分)"
+        else:
+            return False, f"审核不通过 (总分: {score}分, 原因: {', '.join(reasons)})"
+
+    def _calculate_marketing_score(self, content: str) -> int:
+        """计算营销内容的得分"""
+        rule = self.SCORE_RULES['DEDUCTIONS']['MARKETING']
+        total_deduction = 0
+        
+        # 检查普通营销词
+        matches = sum(1 for keyword in rule['keywords'] if keyword in content)
+        if matches > 0:
+            deduction = min(matches * rule['score'], rule['max_deduction'])
+            total_deduction += deduction
+            self.score_details['deductions'].append(('普通营销词', deduction))
+
+        # 检查强营销词
+        strong_matches = sum(1 for keyword in rule['strong_keywords'] if keyword in content)
+        if strong_matches > 0:
+            strong_deduction = strong_matches * rule['strong_score']
+            total_deduction += strong_deduction
+            self.score_details['deductions'].append(('强营销词', strong_deduction))
+
+        return total_deduction
+
+    def _calculate_logistics_score(self, content: str) -> int:
+        """计算物流内容的得分"""
+        rule = self.SCORE_RULES['BONUSES']['LOGISTICS']
+        matches = sum(1 for keyword in rule['keywords'] if keyword in content)
+        bonus = min(matches * rule['score'], rule['max_bonus'])
+        if bonus > 0:
+            self.score_details['bonuses'].append(('物流内容', bonus))
+        return bonus
+
+    def _calculate_rule_score(self, content: str, rule: Dict) -> int:
+        """计算单个规则的得分"""
+        total_score = 0
+        
+        # 检查主要关键词
+        if 'keywords' in rule:
+            matches = sum(1 for keyword in rule['keywords'] if keyword in content)
+            if matches > 0:
+                score = matches * rule['score']
+                if 'max_deduction' in rule:
+                    score = max(score, rule['max_deduction'])
+                total_score += score
+
+        # 检查弱关键词
+        if 'weak_keywords' in rule and 'weak_score' in rule:
+            weak_matches = sum(1 for keyword in rule['weak_keywords'] if keyword in content)
+            if weak_matches > 0:
+                total_score += weak_matches * rule['weak_score']
+
+        return total_score
 
     def _get_business_category(self, business_type: str) -> str:
         """获取业务类别"""
@@ -147,7 +300,6 @@ class BusinessValidator:
 
     def _validate_industry(self, business_type: str, content: str, signature: str) -> Tuple[bool, str]:
         """验证行业类短信"""
-
         # 行业-通知特殊验证
         if business_type == "行业-通知":
             if any(keyword in signature for keyword in self.STORE_KEYWORDS):
@@ -160,12 +312,16 @@ class BusinessValidator:
             if any(keyword in content for keyword in self.LIVE_STREAMING_KEYWORDS):
                 return False, "行业-通知类短信不允许包含直播相关内容"
 
+            # 验证私人号码
+            if self._contains_private_number(content):
+                return False, "行业-通知类短信不允许包含私人号码"
+
         # 验证物流类型
         if business_type == "行业-物流":
             if not any(keyword in content for keyword in self.LOGISTICS_KEYWORDS):
                 return False, "行业-物流类短信必须包含物流相关内容"
 
-        # 通用验证
+        # 通用验证（移除云平台特殊处理）
         for keywords, error_msg in [
             (self.MARKETING_KEYWORDS, "行业类短信不允许包含营销内容"),
             (self.SURVEY_KEYWORDS, "行业类短信不允许包含问卷调查内容"),
@@ -186,69 +342,132 @@ class BusinessValidator:
             if any(keyword in content for keyword in keywords):
                 return False, error_msg
 
-        
-            # 验证私人号码
-            if self._contains_private_number(content):
-                return False, "行业-通知类短信不允许包含私人号码"
-
         return True, "审核通过"
 
-    def _validate_marketing(self, business_type: str, content: str, signature: str) -> Tuple[bool, str]:
-        """验证会销类短信"""
-        # 验证私人号码
+    def _score_marketing(self, business_type: str, content: str, signature: str) -> Tuple[bool, str]:
+        """使用评分制验证会销类短信"""
+        score = self.SCORE_RULES['BASE_SCORE']
+        reasons = []
+
+        # 检查私人号码
         if self._contains_private_number(content):
+            score -= 100  # 私人号码直接扣100分
+            reasons.append("包含私人号码 (-100分)")
             return False, "会销类短信不允许包含私人号码"
 
-        # 验证积分到期相关内容
-        #if any(point_word in content for point_word in self.POINTS_KEYWORDS) and \
-        #   any(action_word in content for action_word in self.POINTS_ACTION_KEYWORDS):
-        #    return False, "会销类短信不允许包含积分到期或清零相关内容"
+        # 检查积分到期相关内容
+        if any(point_word in content for point_word in self.POINTS_KEYWORDS) and \
+           any(action_word in content for action_word in self.POINTS_ACTION_KEYWORDS):
+            score -= 30  # 恢复扣分
+            reasons.append("积分到期或清零相关内容 (-30分)")
 
-        # 验证抽奖相关内容
+        # 检查抽奖相关内容
         if any(keyword in content for keyword in self.LOTTERY_KEYWORDS):
-            return False, "会销类短信不允许包含抽奖相关内容"
+            score -= 40  # 恢复扣分
+            reasons.append("抽奖相关内容 (-40分)")
 
         # 会销-普通特殊验证
         if business_type == "会销-普通":
-            # 验证客服相关内容
+            # 客服相关内容
             if any(keyword in content for keyword in self.CUSTOMER_SERVICE_KEYWORDS):
-                return False, "会销-普通类短信不允许添加客服相关内容"
+                score -= 20  # 恢复扣分
+                reasons.append("客服相关内容 (-20分)")
 
+            # 游戏相关内容
             if any(keyword in content for keyword in self.GAME_KEYWORDS):
-                return False, "会销-普通类短信不允许包含游戏相关内容"
+                score -= 30  # 恢复扣分
+                reasons.append("游戏相关内容 (-30分)")
 
+            # 交友相关内容
             if any(keyword in content for keyword in self.DATING_KEYWORDS):
-                return False, "会销-普通类短信不允许包含交友相关内容"
+                score -= 30  # 恢复扣分
+                reasons.append("交友相关内容 (-30分)")
 
+            # 保险相关签名
             if any(keyword in signature for keyword in self.INSURANCE_KEYWORDS):
-                return False, "会销-普通类短信的签名不允许包含保险相关字样"
+                score -= 25  # 恢复扣分
+                reasons.append("保险相关签名 (-25分)")
 
+            # 黄金珠宝相关签名
             if any(keyword in signature for keyword in self.JEWELRY_KEYWORDS):
-                return False, "会销-普通类短信的签名不允许包含黄金珠宝相关字样"
+                score -= 25  # 恢复扣分
+                reasons.append("黄金珠宝相关签名 (-25分)")
 
         # 通用验证
-        for keywords, error_msg in [
-            (self.REAL_ESTATE_KEYWORDS, "会销类短信不允许包含房地产相关内容"),
-            (self.EXHIBITION_KEYWORDS, "会销类短信不允许包含展会相关内容"),
-            (self.EDUCATION_KEYWORDS, "会销类短信不允许包含教育营销相关内容"),
-            (self.MEDICAL_KEYWORDS, "会销类短信不允许包含医疗拉新相关内容"),
-            (self.JEWELRY_KEYWORDS, "会销类短信不允许包含黄金珠宝相关内容"),
-            (self.MEETING_INVITATION_KEYWORDS, "会销类短信不允许包含参会邀请相关内容")
+        for keywords, deduction, name in [
+            (self.REAL_ESTATE_KEYWORDS, -35, "房地产相关内容"),  # 恢复扣分
+            (self.EXHIBITION_KEYWORDS, -30, "展会相关内容"),    # 恢复扣分
+            (self.EDUCATION_KEYWORDS, -25, "教育营销相关内容"), # 恢复扣分
+            (self.MEDICAL_KEYWORDS, -35, "医疗拉新相关内容"),   # 恢复扣分
+            (self.JEWELRY_KEYWORDS, -30, "黄金珠宝相关内容"),   # 恢复扣分
+            (self.MEETING_INVITATION_KEYWORDS, -25, "参会邀请相关内容") # 恢复扣分
         ]:
             if any(keyword in content for keyword in keywords):
-                return False, error_msg
+                score += deduction
+                reasons.append(f"{name} ({deduction}分)")
 
-        # 验证公众号关键词
+        # 检查公众号关键词
         if all(keyword in content for keyword in self.WECHAT_KEYWORDS):
-            return False, "会销类短信不允许包含关注公众号相关内容"
+            score -= 20  # 恢复扣分
+            reasons.append("关注公众号相关内容 (-20分)")
 
-        return True, "审核通过"
+        # 更新评分详情
+        self.score_details['final_score'] = score
 
-    def _validate_collection(self, content: str) -> Tuple[bool, str]:
-        """验证催收类短信"""
+        # 判断是否通过
+        passed = score >= self.SCORE_RULES['PASS_SCORE']
+        if passed:
+            if reasons:
+                return True, f"审核通过 (总分: {score}分, 原因: {', '.join(reasons)})"
+            return True, f"审核通过 (总分: {score}分)"
+        else:
+            return False, f"审核不通过 (总分: {score}分, 原因: {', '.join(reasons)})"
+
+    def _score_collection(self, content: str) -> Tuple[bool, str]:
+        """使用评分制验证催收类短信"""
+        score = self.SCORE_RULES['BASE_SCORE']
+        reasons = []
+
+        # 检查姓名
         if self._find_chinese_names(content):
-            return False, "催收类短信不允许包含姓名"
-        return True, "审核通过"
+            score -= 50
+            reasons.append("包含姓名 (-50分)")
+
+        # 检查私人号码
+        if self._contains_private_number(content):
+            self.score_details['deductions'].append(('私人号码', self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']))
+            return False, "催收类短信不允许包含私人号码"
+
+        # 检查敏感词
+        sensitive_words = {
+            "法院": -40,
+            "起诉": -40,
+            "律师": -35,
+            "诉讼": -35,
+            "拘留": -45,
+            "坐牢": -45,
+            "判决": -35,
+            "强制执行": -40,
+            "报警": -30,
+            "警察": -30,
+        }
+
+        for word, deduction in sensitive_words.items():
+            if word in content:
+                score += deduction
+                reasons.append(f"包含敏感词'{word}' ({deduction}分)")
+
+        # 更新评分详情
+        self.score_details['final_score'] = score
+
+        # 判断是否通过
+        passed = score >= self.SCORE_RULES['PASS_SCORE']
+        if passed:
+            if reasons:
+                return True, f"审核通过 (总分: {score}分, 原因: {', '.join(reasons)})"
+            return True, f"审核通过 (总分: {score}分)"
+        else:
+            return False, f"审核不通过 (总分: {score}分, 原因: {', '.join(reasons)})"
 
     def _contains_private_number(self, text: str) -> bool:
         """检查是否包含私人号码"""
@@ -287,7 +506,7 @@ class BusinessValidator:
         
         return False  # 未找到符合条件的姓名
 
-def validate_business(business_type: str, content: str, signature: str) -> Tuple[bool, str]:
+def validate_business(business_type: str, content: str, signature: str, account_type: str = None) -> Tuple[bool, str]:
     """
     验证业务类型是否符合规则的便捷函数
     
@@ -295,10 +514,34 @@ def validate_business(business_type: str, content: str, signature: str) -> Tuple
         business_type: 客户业务类型
         content: 短信内容
         signature: 短信签名
+        account_type: 客户类型
         
     Returns:
         (是否通过, 原因说明)
     """
     validator = BusinessValidator()
-    return validator.validate_business(business_type, content, signature)
+    return validator.validate_business(business_type, content, signature, account_type)
+
+# 定义有效的客户类型
+客户类型 = ["云平台", "直客", "类直客", "渠道"]
+
+def validate_account_type(account_type: str) -> Tuple[bool, str]:
+    """
+    验证客户类型
+    
+    Args:
+        account_type: 客户类型
+        
+    Returns:
+        Tuple[bool, str]: (是否通过验证, 验证结果说明)
+    """
+    # 检查是否为有效的客户类型
+    if account_type not in 客户类型:
+        return False, f"无效的客户类型，有效类型为: {', '.join(客户类型)}"
+    
+    # 直客类型直接放行
+    if account_type == "直客":
+        return True, "直客类型直接通过"
+        
+    return True, "客户类型有效"
 
