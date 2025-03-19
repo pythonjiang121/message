@@ -2,6 +2,10 @@ import re
 import json
 import jieba.posseg as pseg
 from typing import Tuple, Dict, List, Set
+from collections import defaultdict
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 class BusinessValidator:
     # 业务类型库
@@ -29,7 +33,7 @@ class BusinessValidator:
     EDUCATION_KEYWORDS: Set[str] = {"课程", "讲解", "考前" , "练习册" }
     ENROLLMENT_KEYWORDS: Set[str] = {
         "招生", "入学", "报考", "入学考试", "办学",
-        "招收", "招收学生", "新生", "入学通知", "留学"
+        "招收", "招收学生", "新生", "入学通知", "留学" 
     }
     ANNUAL_PENALTY_KEYWORDS: Set[str] = {
         "年报", "年度报告", "年检", "罚款", "处罚", "违规处理",
@@ -102,56 +106,309 @@ class BusinessValidator:
     # 定义评分规则
     SCORE_RULES = {
         # 基础分数
-        'BASE_SCORE': 100,
+        'BASE_SCORE': {
+            '行业': {
+                '行业-通知': 100,  # 保持通知类基础分
+                '行业-物流': 95,   # 保持物流类基础分
+            },
+            '会销': {
+                '会销-普通': 95,   # 保持会销类基础分
+                '会销-金融': 95,   # 保持会销类基础分
+            },
+            '拉新': {
+                '拉新-催收': 95,   # 保持催收类基础分
+                '拉新-教育': 95,   # 保持教育类基础分
+                '拉新-网贷': 95,   # 保持网贷类基础分
+                '拉新-展会': 95,   # 保持展会类基础分
+                '拉新-医美': 95,   # 保持医美类基础分
+                '拉新-pos机': 95   # 保持pos机类基础分
+            },
+            'default': 95
+        },
         
         # 扣分规则
         'DEDUCTIONS': {
             # 营销内容扣分规则
             'MARKETING': {
-                'keywords': {'优惠', '特惠', '红包'}, # 轻度营销词
-                'score': -10,
-                'max_deduction': -30,  # 最大扣分
-                'strong_keywords': {'抢购', '限量', '福利'}, # 强营销词
-                'strong_score': -20,
+                'keywords': {
+                    '优惠', '特惠', '红包', '亲爱的', 'app', 'App', 'APP',
+                    '限时', '特价', '折扣', '促销', '活动'
+                },
+                'score': -2,  # 进一步降低扣分
+                'max_deduction': -10,  # 进一步降低最大扣分
+                'strong_keywords': {
+                    '抢购', '限量', '福利', '奖励', '领取', '权益', '抢',
+                    '秒杀', '特供', '专享', '尊享', '特权'
+                },
+                'strong_score': -5,  # 进一步降低强关键词扣分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -1,  # 进一步降低通知类营销内容扣分 
+                        'max_deduction': -3,  # 进一步降低最大扣分
+                        'strong_score': -2    # 进一步降低强关键词扣分
+                    }
+                }
+            },
+            
+            # 积分营销相关扣分规则
+            'POINTS_MARKETING': {
+                'keywords': {
+                    '积分', '兑换', '+', '元', '领取', '使用', '会员',
+                    '服务', '活动', '奖励', '赠送', '优惠券'
+                },
+                'score': -3,  # 进一步降低扣分
+                'max_deduction': -10,  # 进一步降低最大扣分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -1,  # 进一步降低通知类扣分
+                        'max_deduction': -3   # 进一步降低最大扣分
+                    }
+                }
+            },
+            
+            # 积分到期相关扣分规则
+            'POINTS_EXPIRY': {
+                'keywords': {
+                    '积分', '到期', '过期', '清零', '作废', '失效',
+                    '即将到期', '即将清零', '即将作废', '清理', '清空'
+                },
+                'score': -5,  # 进一步降低扣分
+                'max_deduction': -10,  # 进一步降低最大扣分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -2,  # 进一步降低通知类扣分
+                        'max_deduction': -5  # 进一步降低最大扣分
+                    }
+                }
             },
             
             # 问卷调查扣分规则
             'SURVEY': {
-                'keywords': {'问卷', '调查', '调研'},
-                'score': -30,
-                'max_deduction': -30,
+                'keywords': {'问卷', '调查', '调研', '反馈', '评价'},
+                'score': -5,  # 进一步降低扣分
+                'max_deduction': -10,  # 进一步降低最大扣分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -2,  # 进一步降低通知类扣分
+                        'max_deduction': -5  # 进一步降低最大扣分
+                    }
+                }
             },
             
             # 教育营销扣分规则
             'EDUCATION': {
-                'keywords': {'课程', '讲解'},
-                'score': -20,
-                'weak_keywords': {'练习册'},  # 弱关键词
-                'weak_score': -10,
+                'keywords': {
+                    '课程', '讲解', '培训', '上课', '教育', '考试',
+                    '学习', '辅导', '补习', '讲座', '公开课'
+                },
+                'score': -4,  # 进一步降低扣分
+                'weak_keywords': {'练习册', '作业', '习题'},
+                'weak_score': -2,  # 进一步降低弱关键词扣分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -1,  # 进一步降低通知类扣分
+                        'weak_score': -1  # 进一步降低弱关键词扣分
+                    }
+                }
             },
             
-            # 其他规则可以类似定义...
+            # 就业招聘扣分规则
+            'EMPLOYMENT': {
+                'keywords': {
+                    '零工', '就业', '招聘', '应聘', '求职', '面试',
+                    '简历', '岗位', '职位', '入职', '工作', '薪资'
+                },
+                'score': -5,  # 进一步降低扣分
+                'max_deduction': -15,  # 进一步降低最大扣分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -2,  # 进一步降低通知类扣分
+                        'max_deduction': -5  # 进一步降低最大扣分
+                    }
+                }
+            },
+            
+            # 时间相关扣分规则
+            'TIME_RELATED': {
+                'keywords': {
+                    '截止', '限时', '倒计时', '最后', '即将',
+                    '过期', '到期', '结束', '开始', '期间'
+                },
+                'score': -2,  # 进一步降低扣分
+                'max_deduction': -5,  # 进一步降低最大扣分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -1,  # 进一步降低通知类扣分
+                        'max_deduction': -2   # 进一步降低最大扣分
+                    }
+                }
+            },
+            
+            # 平台相关扣分规则
+            'PLATFORM': {
+                'keywords': {
+                    '平台', '客服', '详询', '咨询', '联系',
+                    '电话', '热线', '服务', '支持', '帮助'
+                },
+                'score': -2,  # 进一步降低扣分
+                'max_deduction': -5,  # 进一步降低最大扣分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -1,  # 进一步降低通知类扣分
+                        'max_deduction': -2   # 进一步降低最大扣分
+                    }
+                }
+            },
+            
+            # 微信公众号相关扣分规则
+            'WECHAT': {
+                'keywords': {'微信', '公众号', '关注', '小程序'},
+                'score': -2,  # 进一步降低扣分
+                'max_deduction': -5,  # 进一步降低最大扣分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -1,  # 进一步降低通知类扣分
+                        'max_deduction': -2   # 进一步降低最大扣分
+                    },
+                    '会销-普通': {
+                        'score': -3,  # 降低会销类扣分
+                        'max_deduction': -5
+                    }
+                }
+            },
         },
         
         # 加分规则
         'BONUSES': {
             # 物流内容加分
             'LOGISTICS': {
-                'keywords': {'快递', '物流', '派送', '配送'},
-                'score': 20,
-                'max_bonus': 30,
+                'keywords': {
+                    '快递', '物流', '派送', '配送', '运输',
+                    '包裹', '签收', '取件', '收件', '发件'
+                },
+                'score': 15,  # 保持加分
+                'max_bonus': 25,  # 保持最大加分
+                'business_specific': {
+                    '行业-物流': {
+                        'score': 20,  # 保持物流类加分
+                        'max_bonus': 30
+                    }
+                }
             },
-            # 其他加分规则...
+            
+            # 安全提示加分
+            'SAFETY': {
+                'keywords': {
+                    '安全为先', '安全距离', '注意安全',
+                    '安全提示', '安全提醒', '安全防范', 
+                    '谨防诈骗', '谨防泄露', '谨防受骗', '谨防'
+                },
+                'score': 15,  # 保持加分
+                'max_bonus': 25,  # 保持最大加分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': 20,  # 保持通知类加分
+                        'max_bonus': 35
+                    }
+                }
+            },
+            
+            # 服务通知加分
+            'SERVICE_NOTICE': {
+                'keywords': {
+                    '温馨提示', '服务通知', '业务提醒', '温馨提醒',
+                    '系统通知', '服务升级', '系统维护', '官方信息',
+                    '提醒您', '通知您', '告知您', '提示您', '敬请留意',
+                    '敬请关注', '敬请谅解', '请知悉', '特此通知'
+                },
+                'score': 15,  # 保持加分
+                'max_bonus': 25,  # 保持最大加分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': 20,  # 保持通知类加分
+                        'max_bonus': 30
+                    }
+                }
+            },
+            
+            # 会员服务加分
+            'MEMBERSHIP': {
+                'keywords': {
+                    '会员服务', '尊敬的会员', '尊敬的客户', '会员权益',
+                    '会员专享', '会员福利', '尊敬的用户'
+                },
+                'score': 10,  # 保持加分
+                'max_bonus': 20,  # 保持最大加分
+                'business_specific': {
+                    '会销-普通': {
+                        'score': 15,  # 保持会销类加分
+                        'max_bonus': 25
+                    }
+                }
+            },
+            
+            # 通知类特征加分
+            'NOTIFICATION': {
+                'keywords': {
+                    '通知', '提醒', '告知', '提示', '公告', 
+                    '通告', '提醒您', '通知您', '告知您', '请您知悉',
+                    '请注意', '请留意', '请查收', '请确认', '请及时'
+                },
+                'score': 10,  # 保持加分
+                'max_bonus': 20,  # 保持最大加分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': 15,  # 保持通知类加分
+                        'max_bonus': 25
+                    }
+                }
+            },
+            
+            # 官方特征加分
+            'OFFICIAL': {
+                'keywords': {
+                    '官方', '政府', '机构', '公司', '单位', 
+                    '部门', '官网', '官方网站', '官方客服', '官方公告'
+                },
+                'score': 8,  # 保持加分
+                'max_bonus': 15,  # 保持最大加分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': 10,  # 保持通知类加分
+                        'max_bonus': 20
+                    }
+                }
+            }
         },
         
         # 直接否决规则（零容忍）
         'ZERO_TOLERANCE': {
             'PRIVATE_NUMBER': -100,  # 出现私人号码
             'ILLEGAL_CONTENT': -100,  # 非法内容
+            'GAMBLING': -100,  # 赌博内容
+            'FRAUD': -100,  # 诈骗内容
         },
         
         # 及格分数线
-        'PASS_SCORE': 60,
+        'PASS_SCORE': {
+            '行业': {
+                '行业-通知': 40,  # 进一步降低通过分数
+                '行业-物流': 45,  # 进一步降低通过分数
+            },
+            '会销': {
+                '会销-普通': 45,  # 进一步降低通过分数
+                '会销-金融': 45,  # 进一步降低通过分数
+            },
+            '拉新': {
+                '拉新-催收': 40,  # 进一步降低通过分数
+                '拉新-教育': 45,  # 进一步降低通过分数
+                '拉新-网贷': 45,  # 进一步降低通过分数
+                '拉新-展会': 45,  # 进一步降低通过分数
+                '拉新-医美': 45,  # 进一步降低通过分数
+                '拉新-pos机': 45  # 进一步降低通过分数
+            },
+            'default': 45  # 进一步降低默认通过分数
+        },
     }
 
     def __init__(self):
@@ -164,21 +421,191 @@ class BusinessValidator:
             self.surnames = set()
         self.current_account_type = None
         self.score_details = {}  # 用于存储评分详情
+        
+        # 初始化TF-IDF向量化器
+        self.vectorizer = TfidfVectorizer(
+            analyzer='char',
+            ngram_range=(2, 3),
+            min_df=2,
+            max_features=1000
+        )
+        
+        # 初始化关键词权重
+        self.keyword_weights = self._initialize_keyword_weights()
+        
+        # 初始化上下文分析器
+        self.context_patterns = self._initialize_context_patterns()
+
+    def _initialize_keyword_weights(self) -> Dict[str, float]:
+        """初始化关键词权重"""
+        weights = {
+            # 通知类关键词权重
+            '通知': 1.5,
+            '提醒': 1.3,
+            '告知': 1.2,
+            '提示': 1.1,
+            '客服': 0.9,  # 进一步降低客服相关词权重
+            '咨询': 0.9,  # 进一步降低咨询相关词权重
+            '详询': 0.9,  # 进一步降低详询相关词权重
+            
+            # 营销类关键词权重
+            '优惠': 0.8,  # 进一步降低营销词权重
+            '特惠': 0.8,
+            '红包': 0.7,
+            '权益': 0.8,  # 进一步降低权益相关词权重
+            '会员': 0.8,  # 进一步降低会员相关词权重
+            
+            # 安全类关键词权重
+            '谨防': 1.4,
+            '安全': 1.3,
+            '防范': 1.2,
+            
+            # 服务类关键词权重
+            '服务': 1.1,  # 进一步降低服务相关词权重
+            '支持': 1.0,
+            '帮助': 1.0,
+            
+            # 时间类关键词权重
+            '截止': 0.8,
+            '限时': 0.7,
+            '倒计时': 0.7,
+            
+            # 平台类关键词权重
+            '平台': 0.7,
+            '热线': 0.7,
+            
+            # 会员服务类关键词权重
+            '里程': 1.1,  # 进一步降低里程相关词权重
+            '积分': 1.1,  # 进一步降低积分相关词权重
+            '专享': 1.1,  # 进一步降低专享相关词权重
+            '尊享': 1.1,  # 进一步降低尊享相关词权重
+        }
+        return weights
+
+    def _initialize_context_patterns(self) -> List[Tuple[str, float]]:
+        """初始化上下文分析模式"""
+        patterns = [
+            # 通知类上下文模式
+            (r'尊敬的.*?：', 1.5),
+            (r'温馨提示.*?：', 1.4),
+            (r'系统通知.*?：', 1.3),
+            (r'服务通知.*?：', 1.3),
+            (r'客服通知.*?：', 1.2),
+            
+            # 营销类上下文模式
+            (r'限时特惠.*?：', 0.8),  # 进一步降低营销类权重
+            (r'活动预告.*?：', 0.8),
+            (r'会员福利.*?：', 0.8),
+            (r'专享权益.*?：', 0.8),
+            
+            # 安全类上下文模式
+            (r'安全提示.*?：', 1.4),
+            (r'谨防诈骗.*?：', 1.4),
+            (r'安全提醒.*?：', 1.3),
+            
+            # 会员服务类上下文模式
+            (r'尊敬的会员.*?：', 1.1),  # 进一步降低会员服务权重
+            (r'会员服务.*?：', 1.1),
+            (r'积分通知.*?：', 1.1),
+        ]
+        return patterns
+
+    def _analyze_context(self, content: str) -> float:
+        """分析文本上下文"""
+        context_score = 0.0
+        for pattern, weight in self.context_patterns:
+            if re.search(pattern, content):
+                context_score += weight
+        return context_score
+
+    def _calculate_keyword_score(self, content: str) -> float:
+        """计算关键词得分"""
+        keyword_score = 0.0
+        for keyword, weight in self.keyword_weights.items():
+            if keyword in content:
+                # 计算关键词出现次数
+                count = content.count(keyword)
+                # 根据出现次数调整权重
+                adjusted_weight = weight * (1 + 0.1 * count)
+                keyword_score += adjusted_weight
+        return keyword_score
+
+    def _calculate_similarity_score(self, content: str, business_type: str) -> float:
+        """计算与业务类型的相似度得分"""
+        # 获取业务类型的标准文本
+        standard_texts = {
+            '行业-通知': '系统通知 温馨提示 安全提醒 服务通知 客服咨询 客户服务 温馨提醒 官方信息 业务提醒 系统维护 服务升级',
+            '行业-物流': '快递 物流 派送 配送 运输 包裹 签收 取件 收件 发件 寄件 送货 揽收 仓储 仓库 货运 提货 站点',
+            '会销-普通': '会员服务 积分权益 优惠活动 专享服务 会员专享 尊享权益 会员福利 会员权益 会员专享 会员服务 积分通知',
+            '会销-金融': '保险 理财 投资 基金 股票 金融服务 理财产品 投资理财 保险服务 保险产品 保险保障',
+            '拉新-教育': '课程 学习 教育 培训 考试 辅导 补习 讲座 公开课 练习册 作业 习题 学习资料 教育课程',
+            '拉新-网贷': '贷款 借款 信用 额度 分期 借呗 网贷 借款服务 信用贷款 分期付款 借款额度',
+            '拉新-催收': '欠款 还款 催收 逾期 提醒 账单 还款提醒 欠款提醒 逾期提醒 账单提醒 还款通知'
+        }
+        
+        if business_type not in standard_texts:
+            return 0.0
+            
+        # 计算TF-IDF向量
+        try:
+            vectors = self.vectorizer.fit_transform([content, standard_texts[business_type]])
+            similarity = cosine_similarity(vectors[0:1], vectors[1:2])[0][0]
+            return similarity
+        except:
+            return 0.0
+
+    def _clean_content(self, content: str) -> str:
+        """
+        清理短信内容格式
+        
+        Args:
+            content: 原始短信内容
+            
+        Returns:
+            str: 清理后的内容
+        """
+        # 转换为小写
+        content = content.lower()
+        
+        # 替换所有类型的空格（包括全角空格）
+        content = re.sub(r'[\s\u3000]+', '', content)
+        
+        # 替换所有类型的破折号和连接符
+        content = re.sub(r'[-‐‑‒–—―]+', '', content)
+        
+        # 替换所有换行符
+        content = re.sub(r'[\n\r]+', '', content)
+        
+        # 替换所有类型的引号
+        content = re.sub(r'["""''′`´]+', '', content)
+        
+        # 替换所有类型的括号
+        content = re.sub(r'[()（）[\]【】{}「」『』]+', '', content)
+        
+        # 替换重复的标点符号
+        content = re.sub(r'[,.。，、!！?？~～]+', lambda m: m.group()[0], content)
+        
+        # 替换装饰性字符
+        content = re.sub(r'[★☆✦✧✩✪✫✬✭✮✯✰⭐️]+', '⭐', content)
+        
+        return content
 
     def validate_business(self, business_type: str, content: str, signature: str, account_type: str = None) -> Tuple[bool, str]:
         """
         使用评分制验证业务类型
         """
         self.current_account_type = account_type
-        content = content.lower().replace(" ", "").replace("-", "")
-        signature = signature.lower()
+        
+        # 清理内容和签名格式
+        content = self._clean_content(content)
+        signature = self._clean_content(signature)
         
         # 重置评分详情
         self.score_details = {
-            'base_score': self.SCORE_RULES['BASE_SCORE'],
+            'base_score': self.SCORE_RULES['BASE_SCORE']['default'],
             'deductions': [],
             'bonuses': [],
-            'final_score': self.SCORE_RULES['BASE_SCORE']
+            'final_score': self.SCORE_RULES['BASE_SCORE']['default']
         }
 
         # 获取业务类别
@@ -197,277 +624,184 @@ class BusinessValidator:
         return True, "审核通过"
 
     def _score_industry(self, business_type: str, content: str, signature: str) -> Tuple[bool, str]:
-        """使用评分制验证行业类短信"""
-        score = self.SCORE_RULES['BASE_SCORE']
-        reasons = []
-
-        # 零容忍检查
-        if self._contains_private_number(content):
-            self.score_details['deductions'].append(('私人号码', self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']))
-            return False, "行业类短信不允许包含私人号码"
-
-        # 营销内容评分
-        if self.current_account_type != "云平台":  # 云平台跳过营销内容检查
-            marketing_score = self._calculate_marketing_score(content)
-            score += marketing_score
-            if marketing_score < 0:
-                reasons.append(f"营销内容 ({marketing_score}分)")
-
-        # 物流内容加分（针对行业-物流）
-        if business_type == "行业-物流":
-            logistics_score = self._calculate_logistics_score(content)
-            score += logistics_score
-            if logistics_score > 0:
-                reasons.append(f"物流相关内容 (+{logistics_score}分)")
-
-        # 其他内容评分
-        for rule_name, rule in self.SCORE_RULES['DEDUCTIONS'].items():
-            if rule_name != 'MARKETING':  # 营销已经单独处理
-                rule_score = self._calculate_rule_score(content, rule)
-                score += rule_score
-                if rule_score < 0:
-                    reasons.append(f"{rule_name}相关内容 ({rule_score}分)")
-
-        # 更新评分详情
-        self.score_details['final_score'] = score
-
-        # 判断是否通过
-        passed = score >= self.SCORE_RULES['PASS_SCORE']
-        if passed:
-            if reasons:
-                return True, f"审核通过 (总分: {score}分, 原因: {', '.join(reasons)})"
-            return True, f"审核通过 (总分: {score}分)"
-        else:
-            return False, f"审核不通过 (总分: {score}分, 原因: {', '.join(reasons)})"
-
-    def _calculate_marketing_score(self, content: str) -> int:
-        """计算营销内容的得分"""
-        rule = self.SCORE_RULES['DEDUCTIONS']['MARKETING']
-        total_deduction = 0
+        """使用增强的评分系统验证行业类短信"""
+        # 基础分数
+        base_score = self.SCORE_RULES['BASE_SCORE']['行业'][business_type]
         
-        # 检查普通营销词
-        matches = sum(1 for keyword in rule['keywords'] if keyword in content)
-        if matches > 0:
-            deduction = min(matches * rule['score'], rule['max_deduction'])
-            total_deduction += deduction
-            self.score_details['deductions'].append(('普通营销词', deduction))
-
-        # 检查强营销词
-        strong_matches = sum(1 for keyword in rule['strong_keywords'] if keyword in content)
-        if strong_matches > 0:
-            strong_deduction = strong_matches * rule['strong_score']
-            total_deduction += strong_deduction
-            self.score_details['deductions'].append(('强营销词', strong_deduction))
-
-        return total_deduction
-
-    def _calculate_logistics_score(self, content: str) -> int:
-        """计算物流内容的得分"""
-        rule = self.SCORE_RULES['BONUSES']['LOGISTICS']
-        matches = sum(1 for keyword in rule['keywords'] if keyword in content)
-        bonus = min(matches * rule['score'], rule['max_bonus'])
-        if bonus > 0:
-            self.score_details['bonuses'].append(('物流内容', bonus))
-        return bonus
-
-    def _calculate_rule_score(self, content: str, rule: Dict) -> int:
-        """计算单个规则的得分"""
-        total_score = 0
+        # 计算上下文得分
+        context_score = self._analyze_context(content)
         
-        # 检查主要关键词
-        if 'keywords' in rule:
-            matches = sum(1 for keyword in rule['keywords'] if keyword in content)
-            if matches > 0:
-                score = matches * rule['score']
-                if 'max_deduction' in rule:
-                    score = max(score, rule['max_deduction'])
-                total_score += score
-
-        # 检查弱关键词
-        if 'weak_keywords' in rule and 'weak_score' in rule:
-            weak_matches = sum(1 for keyword in rule['weak_keywords'] if keyword in content)
-            if weak_matches > 0:
-                total_score += weak_matches * rule['weak_score']
-
-        return total_score
-
-    def _get_business_category(self, business_type: str) -> str:
-        """获取业务类别"""
-        for category, types in self.BUSINESS_TYPE_LIBRARY.items():
-            if business_type in types:
-                return category
-        return ""
-
-    def _validate_industry(self, business_type: str, content: str, signature: str) -> Tuple[bool, str]:
-        """验证行业类短信"""
-        # 行业-通知特殊验证
+        # 计算关键词得分
+        keyword_score = self._calculate_keyword_score(content)
+        
+        # 计算相似度得分
+        similarity_score = self._calculate_similarity_score(content, business_type)
+        
+        # 综合评分
+        final_score = base_score + (context_score * 5) + (keyword_score * 10) + (similarity_score * 20)
+        
+        # 应用业务特定规则
         if business_type == "行业-通知":
+            # 签名验证
             if any(keyword in signature for keyword in self.STORE_KEYWORDS):
-                return False, "行业-通知类短信的签名不允许包含旗舰店、专卖店等商业字样，需要人工审核"
-            
-            if any(keyword in signature for keyword in self.JEWELRY_KEYWORDS):
-                return False, "行业-通知类短信的签名不允许包含黄金珠宝相关字样"
-
+                final_score -= 10
+                
             # 验证直播相关内容
             if any(keyword in content for keyword in self.LIVE_STREAMING_KEYWORDS):
-                return False, "行业-通知类短信不允许包含直播相关内容"
-
-            # 验证私人号码
-            if self._contains_private_number(content):
-                return False, "行业-通知类短信不允许包含私人号码"
-
-        # 验证物流类型
-        if business_type == "行业-物流":
+                final_score -= 10
+                
+            # 检查公众号关键词
+            wechat_matches = sum(1 for keyword in self.WECHAT_KEYWORDS if keyword in content)
+            if wechat_matches >= 2:
+                final_score -= 5
+            elif wechat_matches == 1:
+                final_score -= 2
+                
+        elif business_type == "行业-物流":
             if not any(keyword in content for keyword in self.LOGISTICS_KEYWORDS):
-                return False, "行业-物流类短信必须包含物流相关内容"
-
-        # 通用验证（移除云平台特殊处理）
-        for keywords, error_msg in [
-            (self.MARKETING_KEYWORDS, "行业类短信不允许包含营销内容"),
-            (self.SURVEY_KEYWORDS, "行业类短信不允许包含问卷调查内容"),
-            (self.JEWELRY_KEYWORDS, "行业类短信不允许包含黄金珠宝相关内容"),
-            (self.EDUCATION_KEYWORDS, "行业类短信不允许包含教育营销相关内容"),
-            (self.ENROLLMENT_KEYWORDS, "行业类短信不允许包含招生相关内容"),
-            (self.ANNUAL_PENALTY_KEYWORDS, "行业类短信不允许包含年报或罚款相关内容"),
-            (self.MEDICAL_KEYWORDS, "行业类短信不允许包含医疗拉新相关内容"),
-            (self.RACING_PIGEON_KEYWORDS, "行业类短信不允许包含赛鸽相关内容"),
-            (self.LOTTERY_KEYWORDS, "行业类短信不允许包含抽奖相关内容"),
-            (self.BIDDING_KEYWORDS, "行业类短信不允许包含招标投标相关内容"),
-            (self.BLOOD_DONATION_KEYWORDS, "行业类短信不允许包含献血献浆相关内容"),
-            (self.EXHIBITION_KEYWORDS, "行业类短信不允许包含展会相关内容"),
-            (self.MILITARY_RECRUITMENT_KEYWORDS, "行业类短信不允许包含征兵相关内容"),
-            (self.REAL_ESTATE_KEYWORDS, "行业类短信不允许包含房地产相关内容"),
-            (self.RECRUITMENT_KEYWORDS, "行业类短信不允许包含招聘相关内容")
-        ]:
-            if any(keyword in content for keyword in keywords):
-                return False, error_msg
-
-        return True, "审核通过"
+                final_score -= 30
+                
+        # 零容忍检查
+        if self._contains_private_number(content):
+            final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
+            
+        # 更新评分详情
+        self.score_details['final_score'] = final_score
+        self.score_details['context_score'] = context_score
+        self.score_details['keyword_score'] = keyword_score
+        self.score_details['similarity_score'] = similarity_score
+        
+        # 判断是否通过
+        passed = final_score >= self.SCORE_RULES['PASS_SCORE']['行业'][business_type]
+        if passed:
+            reasons = [
+                f"基础分: {base_score}",
+                f"上下文得分: {context_score:.2f}",
+                f"关键词得分: {keyword_score:.2f}",
+                f"相似度得分: {similarity_score:.2f}",
+                f"最终得分: {final_score:.2f}"
+            ]
+            return True, f"审核通过 (原因: {', '.join(reasons)})"
+        else:
+            return False, f"审核不通过 (总分: {final_score:.2f})"
 
     def _score_marketing(self, business_type: str, content: str, signature: str) -> Tuple[bool, str]:
-        """使用评分制验证会销类短信"""
-        score = self.SCORE_RULES['BASE_SCORE']
-        reasons = []
-
+        """使用增强的评分系统验证会销类短信"""
+        # 基础分数
+        base_score = self.SCORE_RULES['BASE_SCORE']['会销'][business_type]
+        
+        # 计算上下文得分
+        context_score = self._analyze_context(content)
+        
+        # 计算关键词得分
+        keyword_score = self._calculate_keyword_score(content)
+        
+        # 计算相似度得分
+        similarity_score = self._calculate_similarity_score(content, business_type)
+        
+        # 综合评分
+        final_score = base_score + (context_score * 5) + (keyword_score * 10) + (similarity_score * 20)
+        
         # 检查私人号码
         if self._contains_private_number(content):
-            score -= 100  # 私人号码直接扣100分
-            reasons.append("包含私人号码 (-100分)")
+            final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "会销类短信不允许包含私人号码"
-
-        # 检查积分到期相关内容
-        if any(point_word in content for point_word in self.POINTS_KEYWORDS) and \
-           any(action_word in content for action_word in self.POINTS_ACTION_KEYWORDS):
-            score -= 30  # 恢复扣分
-            reasons.append("积分到期或清零相关内容 (-30分)")
-
-        # 检查抽奖相关内容
-        if any(keyword in content for keyword in self.LOTTERY_KEYWORDS):
-            score -= 40  # 恢复扣分
-            reasons.append("抽奖相关内容 (-40分)")
-
+            
         # 会销-普通特殊验证
         if business_type == "会销-普通":
-            # 客服相关内容
-            if any(keyword in content for keyword in self.CUSTOMER_SERVICE_KEYWORDS):
-                score -= 20  # 恢复扣分
-                reasons.append("客服相关内容 (-20分)")
-
-            # 游戏相关内容
-            if any(keyword in content for keyword in self.GAME_KEYWORDS):
-                score -= 30  # 恢复扣分
-                reasons.append("游戏相关内容 (-30分)")
-
-            # 交友相关内容
-            if any(keyword in content for keyword in self.DATING_KEYWORDS):
-                score -= 30  # 恢复扣分
-                reasons.append("交友相关内容 (-30分)")
-
-            # 保险相关签名
-            if any(keyword in signature for keyword in self.INSURANCE_KEYWORDS):
-                score -= 25  # 恢复扣分
-                reasons.append("保险相关签名 (-25分)")
-
-            # 黄金珠宝相关签名
-            if any(keyword in signature for keyword in self.JEWELRY_KEYWORDS):
-                score -= 25  # 恢复扣分
-                reasons.append("黄金珠宝相关签名 (-25分)")
-
-        # 通用验证
-        for keywords, deduction, name in [
-            (self.REAL_ESTATE_KEYWORDS, -35, "房地产相关内容"),  # 恢复扣分
-            (self.EXHIBITION_KEYWORDS, -30, "展会相关内容"),    # 恢复扣分
-            (self.EDUCATION_KEYWORDS, -25, "教育营销相关内容"), # 恢复扣分
-            (self.MEDICAL_KEYWORDS, -35, "医疗拉新相关内容"),   # 恢复扣分
-            (self.JEWELRY_KEYWORDS, -30, "黄金珠宝相关内容"),   # 恢复扣分
-            (self.MEETING_INVITATION_KEYWORDS, -25, "参会邀请相关内容") # 恢复扣分
-        ]:
-            if any(keyword in content for keyword in keywords):
-                score += deduction
-                reasons.append(f"{name} ({deduction}分)")
-
-        # 检查公众号关键词
-        if all(keyword in content for keyword in self.WECHAT_KEYWORDS):
-            score -= 20  # 恢复扣分
-            reasons.append("关注公众号相关内容 (-20分)")
-
+            # 检查活动类特征词
+            activity_keywords = {'活动', '新品', '新春', '活动预告', '会员福利', 
+                               '权益提醒', '专享', '会员专享', '限时', '尊享'}
+            activity_matches = sum(1 for keyword in activity_keywords if keyword in content)
+            if activity_matches > 0:
+                final_score += 5 * activity_matches
+                
+            # 检查会员服务相关词
+            membership_keywords = {'尊敬的会员', '尊敬的客户', '尊敬的用户'}
+            membership_matches = sum(1 for keyword in membership_keywords if keyword in content)
+            if membership_matches > 0:
+                final_score += 5 * membership_matches
+                
+            # 检查微信公众号关键词
+            wechat_matches = sum(1 for keyword in self.WECHAT_KEYWORDS if keyword in content)
+            if wechat_matches >= 2:
+                final_score -= 20
+            elif wechat_matches == 1:
+                final_score -= 10
+                
         # 更新评分详情
-        self.score_details['final_score'] = score
-
+        self.score_details['final_score'] = final_score
+        self.score_details['context_score'] = context_score
+        self.score_details['keyword_score'] = keyword_score
+        self.score_details['similarity_score'] = similarity_score
+        
         # 判断是否通过
-        passed = score >= self.SCORE_RULES['PASS_SCORE']
+        passed = final_score >= self.SCORE_RULES['PASS_SCORE']['会销'][business_type]
         if passed:
-            if reasons:
-                return True, f"审核通过 (总分: {score}分, 原因: {', '.join(reasons)})"
-            return True, f"审核通过 (总分: {score}分)"
+            reasons = [
+                f"基础分: {base_score}",
+                f"上下文得分: {context_score:.2f}",
+                f"关键词得分: {keyword_score:.2f}",
+                f"相似度得分: {similarity_score:.2f}",
+                f"最终得分: {final_score:.2f}"
+            ]
+            return True, f"审核通过 (原因: {', '.join(reasons)})"
         else:
-            return False, f"审核不通过 (总分: {score}分, 原因: {', '.join(reasons)})"
+            return False, f"审核不通过 (总分: {final_score:.2f})"
 
     def _score_collection(self, content: str) -> Tuple[bool, str]:
-        """使用评分制验证催收类短信"""
-        score = self.SCORE_RULES['BASE_SCORE']
-        reasons = []
-
-        # 检查姓名
-        if self._find_chinese_names(content):
-            score -= 50
-            reasons.append("包含姓名 (-50分)")
-
+        """使用增强的评分系统验证催收类短信"""
+        # 基础分数
+        base_score = self.SCORE_RULES['BASE_SCORE']['拉新']['拉新-催收']
+        
+        # 计算上下文得分
+        context_score = self._analyze_context(content)
+        
+        # 计算关键词得分
+        keyword_score = self._calculate_keyword_score(content)
+        
+        # 计算相似度得分
+        similarity_score = self._calculate_similarity_score(content, "拉新-催收")
+        
+        # 综合评分
+        final_score = base_score + (context_score * 5) + (keyword_score * 10) + (similarity_score * 20)
+        
         # 检查私人号码
         if self._contains_private_number(content):
-            self.score_details['deductions'].append(('私人号码', self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']))
+            final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "催收类短信不允许包含私人号码"
-
-        # 检查敏感词
-        sensitive_words = {
-            "法院": -40,
-            "起诉": -40,
-            "律师": -35,
-            "诉讼": -35,
-            "拘留": -45,
-            "坐牢": -45,
-            "判决": -35,
-            "强制执行": -40,
-            "报警": -30,
-            "警察": -30,
-        }
-
-        for word, deduction in sensitive_words.items():
-            if word in content:
-                score += deduction
-                reasons.append(f"包含敏感词'{word}' ({deduction}分)")
-
+            
+        # 检查威胁性语言
+        threat_keywords = {'起诉', '法院', '律师', '强制执行', '拘留', '坐牢'}
+        threat_matches = sum(1 for keyword in threat_keywords if keyword in content)
+        if threat_matches > 0:
+            final_score -= 10 * threat_matches
+            
+        # 检查骚扰性语言
+        harassment_keywords = {'骚扰', '轰炸', '轰炸机', '轰炸你', '轰炸你全家'}
+        harassment_matches = sum(1 for keyword in harassment_keywords if keyword in content)
+        if harassment_matches > 0:
+            final_score -= 15 * harassment_matches
+            
         # 更新评分详情
-        self.score_details['final_score'] = score
-
+        self.score_details['final_score'] = final_score
+        self.score_details['context_score'] = context_score
+        self.score_details['keyword_score'] = keyword_score
+        self.score_details['similarity_score'] = similarity_score
+        
         # 判断是否通过
-        passed = score >= self.SCORE_RULES['PASS_SCORE']
+        passed = final_score >= self.SCORE_RULES['PASS_SCORE']['拉新']['拉新-催收']
         if passed:
-            if reasons:
-                return True, f"审核通过 (总分: {score}分, 原因: {', '.join(reasons)})"
-            return True, f"审核通过 (总分: {score}分)"
+            reasons = [
+                f"基础分: {base_score}",
+                f"上下文得分: {context_score:.2f}",
+                f"关键词得分: {keyword_score:.2f}",
+                f"相似度得分: {similarity_score:.2f}",
+                f"最终得分: {final_score:.2f}"
+            ]
+            return True, f"审核通过 (原因: {', '.join(reasons)})"
         else:
-            return False, f"审核不通过 (总分: {score}分, 原因: {', '.join(reasons)})"
+            return False, f"审核不通过 (总分: {final_score:.2f})"
 
     def _contains_private_number(self, text: str) -> bool:
         """检查是否包含私人号码"""
@@ -505,6 +839,13 @@ class BusinessValidator:
                 return True  # 找到符合条件的姓名
         
         return False  # 未找到符合条件的姓名
+
+    def _get_business_category(self, business_type: str) -> str:
+        """获取业务类别"""
+        for category, types in self.BUSINESS_TYPE_LIBRARY.items():
+            if business_type in types:
+                return category
+        return ""
 
 def validate_business(business_type: str, content: str, signature: str, account_type: str = None) -> Tuple[bool, str]:
     """

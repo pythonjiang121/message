@@ -44,8 +44,8 @@ class SMSChecker:
             results['客户类型审核'] = "特例直接通过"
             return True, results
             
-        # 特定关键词签名直接通过
-        special_keywords = ["国家", "部", "电力"]
+        # 特定关键词签名直接通过，如政府机关、部委、公安、法院、检察院等
+        special_keywords = ["政府", "机关", "电力", "部委", "公安", "法院", "检察院"]
         if any(keyword in signature for keyword in special_keywords):
             results['签名审核'] = "关键词直接通过"
             results['内容审核'] = "关键词直接通过"
@@ -127,11 +127,11 @@ def process_excel(input_file: str) -> str:
                 '签名审核结果': audit_results['签名审核'],
                 '内容审核结果': audit_results['内容审核'],
                 '业务审核结果': audit_results['业务审核'],
-                '客户类型审核结果': audit_results['客户类型审核']
+
             })
         
         # 将结果添加到DataFrame
-        for key in ['总体审核结果', '签名审核结果', '内容审核结果', '业务审核结果', '客户类型审核结果']:
+        for key in ['总体审核结果', '签名审核结果', '内容审核结果', '业务审核结果']:
             df[key] = [result[key] for result in results]
         
         # 生成输出文件名
@@ -160,7 +160,7 @@ def main():
     try:
         # 获取输入文件
         import sys
-        input_file = sys.argv[1] if len(sys.argv) > 1 else "2月审核.xlsx"
+        input_file = sys.argv[1] if len(sys.argv) > 1 else "合并审核.xlsx"
         
         if not os.path.exists(input_file):
             print(f"错误: 输入文件 '{input_file}' 不存在")
