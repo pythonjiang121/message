@@ -43,15 +43,7 @@ class SMSChecker:
             results['业务审核'] = "特例直接通过"
             results['客户类型审核'] = "特例直接通过"
             return True, results
-            
-        # 特定关键词签名直接通过，如政府机关、部委、公安、法院、检察院等
-        special_keywords = ["政府", "机关", "电力", "部委", "公安", "法院", "检察院"]
-        if any(keyword in signature for keyword in special_keywords):
-            results['签名审核'] = "关键词直接通过"
-            results['内容审核'] = "关键词直接通过"
-            results['业务审核'] = "关键词直接通过"
-            results['客户类型审核'] = "关键词直接通过"
-            return True, results
+               
         
         # 1. 签名审核
         sig_passed, sig_reason = validate_signature(signature)

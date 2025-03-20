@@ -10,7 +10,7 @@ def analyze_rejection_reasons(text):
 
 def analyze_discrepancy():
     # 读取Excel文件
-    df = pd.read_excel("审核结果_20250319_180503.xlsx")
+    df = pd.read_excel("审核结果_20250320_101402.xlsx")
     
     # 计算匹配率
     total_count = len(df)
