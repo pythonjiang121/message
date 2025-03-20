@@ -1,25 +1,12 @@
-from signature import validate_signature
-from content import SMSContentValidator
-from business import validate_business, validate_account_type
+from business import validate_business
 from typing import Tuple, Dict
 import pandas as pd
-import json
 import os
 from datetime import datetime
+import re
+from collections import Counter
 
 class SMSChecker:
-    def __init__(self):
-        """初始化短信审核器"""
-        # 加载姓氏数据
-        try:
-            with open('surnames.json', 'r', encoding='utf-8') as f:
-                self.surnames = json.load(f)
-        except Exception as e:
-            print(f"Warning: Could not load surnames.json: {e}")
-            self.surnames = []
-        
-        # 初始化内容验证器
-        self.content_validator = SMSContentValidator()
 
     def check_sms(self, signature: str, content: str, business_type: str, account_type: str) -> Tuple[bool, Dict[str, str]]:
         """
@@ -32,46 +19,15 @@ class SMSChecker:
             account_type: 客户类型
             
         Returns:
-            Tuple[bool, Dict]: (是否通过审核, 各项审核结果及原因)
+            Tuple[bool, Dict]: (是否通过审核, 审核结果及原因)
         """
         results = {}
 
-        # 特例判断：特定签名直接通过
-        if signature == "饿了么":
-            results['签名审核'] = "特例直接通过"
-            results['内容审核'] = "特例直接通过"
-            results['业务审核'] = "特例直接通过"
-            results['客户类型审核'] = "特例直接通过"
-            return True, results
-            
-        # 特定关键词签名直接通过，如政府机关、部委、公安、法院、检察院等
-        special_keywords = ["政府", "机关", "电力", "部委", "公安", "法院", "检察院"]
-        if any(keyword in signature for keyword in special_keywords):
-            results['签名审核'] = "关键词直接通过"
-            results['内容审核'] = "关键词直接通过"
-            results['业务审核'] = "关键词直接通过"
-            results['客户类型审核'] = "关键词直接通过"
-            return True, results
-        
-        # 1. 签名审核
-        sig_passed, sig_reason = validate_signature(signature)
-        results['签名审核'] = sig_reason
-        
-        # 2. 内容审核
-        content_passed, content_reason = self.content_validator.validate_content(content)
-        results['内容审核'] = content_reason
-        
-        # 3. 业务类型审核
+        # 业务类型审核（包含客户类型审核）
         business_passed, business_reason = validate_business(business_type, content, signature)
         results['业务审核'] = business_reason
 
-        # 4. 客户类型审核
-        account_type_passed, account_type_reason = validate_account_type(account_type)
-        results['客户类型审核'] = account_type_reason
-
-        # 判断最终审核结果
-        all_passed = sig_passed and content_passed and business_passed and account_type_passed
-        return all_passed, results
+        return business_passed, results
 
 def process_excel(input_file: str) -> str:
     """
@@ -105,10 +61,10 @@ def process_excel(input_file: str) -> str:
         
         # 存储审核结果
         results = []
-        passed_count = 0
+        code_pass_count = 0
         
         # 处理每一行
-        for index, row in df.iterrows():
+        for _, row in df.iterrows():
             passed, audit_results = checker.check_sms(
                 row['短信签名'],
                 row['短信内容'],
@@ -118,20 +74,17 @@ def process_excel(input_file: str) -> str:
             
             if passed:
                 status = '通过'
-                passed_count += 1
+                code_pass_count += 1
             else:
                 status = '驳回'
                 
             results.append({
                 '总体审核结果': status,
-                '签名审核结果': audit_results['签名审核'],
-                '内容审核结果': audit_results['内容审核'],
-                '业务审核结果': audit_results['业务审核'],
-
+                '业务审核结果': audit_results['业务审核']
             })
         
         # 将结果添加到DataFrame
-        for key in ['总体审核结果', '签名审核结果', '内容审核结果', '业务审核结果']:
+        for key in ['总体审核结果', '业务审核结果']:
             df[key] = [result[key] for result in results]
         
         # 生成输出文件名
@@ -141,14 +94,57 @@ def process_excel(input_file: str) -> str:
         # 保存结果
         df.to_excel(output_file, index=False, engine='openpyxl')
         
-        # 打印统计信息
-        total = len(df)
-        print(f"\n审核完成:")
-        print(f"总计: {total} 条")
-        print(f"通过: {passed_count} 条")
-        print(f"驳回: {total - passed_count} 条")
-        print(f"\n结果已保存至: {output_file}")
+        # 计算统计信息
+        total_count = len(df)
+        code_reject_count = total_count - code_pass_count
+        matched_count = len(df[df['审核结果'] == df['总体审核结果']])
+        match_rate = (matched_count / total_count) * 100
         
+        # 打印统计信息
+        print("\n=== 审核统计信息 ===")
+        print(f"总数据量: {total_count} 条")
+        print(f"代码通过: {code_pass_count} 条")
+        print(f"代码驳回: {code_reject_count} 条")
+        print(f"匹配数据量: {matched_count} 条")
+        print(f"匹配率: {match_rate:.2f}%")
+        
+        # 分析不一致数据
+        df_discrepancy = df[df['审核结果'] != df['总体审核结果']]
+        human_reject_code_pass = df_discrepancy[
+            (df_discrepancy['审核结果'] == '驳回') & 
+            (df_discrepancy['总体审核结果'] == '通过')
+        ]
+        human_pass_code_reject = df_discrepancy[
+            (df_discrepancy['审核结果'] == '通过') & 
+            (df_discrepancy['总体审核结果'] == '驳回')
+        ]
+        
+        print(f"\n=== 不一致数据分析 ===")
+        print(f"人工驳回但代码通过: {len(human_reject_code_pass)} 条")
+        print(f"人工通过但代码驳回: {len(human_pass_code_reject)} 条")
+        
+        # 分析人工驳回但代码通过的高频词
+        if len(human_reject_code_pass) > 0:
+            print("\n=== 人工驳回但代码通过的高频词分析（前10） ===")
+            words = []
+            for content in human_reject_code_pass['短信内容']:
+                if isinstance(content, str):
+                    # 使用正则表达式匹配中文词组（2个或更多字符）
+                    words.extend(re.findall(r'[\u4e00-\u9fa5]{2,}', content))
+            
+            # 统计词频
+            word_counts = Counter(words)
+            
+            # 输出前10个高频词
+            for word, count in word_counts.most_common(10):
+                print(f"{word}: {count}次")
+            
+        # 保存不一致数据
+        if len(human_reject_code_pass) > 0:
+            human_reject_code_pass.to_excel(f"人工驳回代码通过数据_{timestamp}.xlsx", index=False)
+        if len(human_pass_code_reject) > 0:
+            human_pass_code_reject.to_excel(f"人工通过代码驳回数据_{timestamp}.xlsx", index=False)
+                
         return output_file
         
     except Exception as e:

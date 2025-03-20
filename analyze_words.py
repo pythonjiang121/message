@@ -42,5 +42,5 @@ def analyze_frequent_words(excel_file):
 
 if __name__ == "__main__":
     # 使用最新生成的Excel文件
-    excel_file = "人工驳回代码通过数据.xlsx"
+    excel_file = "人工通过代码驳回数据_20250320_173617.xlsx"
     analyze_frequent_words(excel_file) 
