@@ -24,7 +24,21 @@ class SMSChecker:
         results = {}
 
         # 业务类型审核（包含客户类型审核）
-        business_passed, business_reason = validate_business(business_type, content, signature)
+        business_passed, business_reason = validate_business(business_type, content, signature, account_type)
+        
+        # 从审核结果中提取分数
+        try:
+            # 使用正则表达式提取分数
+            score_match = re.search(r'总分: (\d+\.?\d*)', business_reason)
+            if score_match:
+                score = float(score_match.group(1))
+                # 60-80分需要人工审核
+                if 60 <= score < 80:
+                    business_passed = None  # 使用None表示需要人工审核
+                    business_reason = f"需人工审核 (总分: {score:.2f})"
+        except Exception as e:
+            print(f"提取分数时出错: {str(e)}")
+            
         results['业务审核'] = business_reason
 
         return business_passed, results
@@ -51,7 +65,7 @@ def process_excel(input_file: str) -> str:
 
         # 读取Excel文件
         df = pd.read_excel(input_file, engine='openpyxl')
-        required_columns = ['短信签名', '短信内容', '客户业务类型', '客户类型']
+        required_columns = ['短信签名', '短信内容', '客户业务类型', '客户类型', '审核结果']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             raise ValueError(f"Excel文件缺少必需的列: {', '.join(missing_columns)}")
@@ -62,6 +76,8 @@ def process_excel(input_file: str) -> str:
         # 存储审核结果
         results = []
         code_pass_count = 0
+        code_manual_count = 0
+        code_reject_count = 0
         
         # 处理每一行
         for _, row in df.iterrows():
@@ -72,11 +88,15 @@ def process_excel(input_file: str) -> str:
                 row['客户类型']
             )
             
-            if passed:
+            if passed is None:
+                status = '待人工审核'
+                code_manual_count += 1
+            elif passed:
                 status = '通过'
                 code_pass_count += 1
             else:
                 status = '驳回'
+                code_reject_count += 1
                 
             results.append({
                 '总体审核结果': status,
@@ -96,55 +116,39 @@ def process_excel(input_file: str) -> str:
         
         # 计算统计信息
         total_count = len(df)
-        code_reject_count = total_count - code_pass_count
-        matched_count = len(df[df['审核结果'] == df['总体审核结果']])
-        match_rate = (matched_count / total_count) * 100
         
-        # 打印统计信息
-        print("\n=== 审核统计信息 ===")
-        print(f"总数据量: {total_count} 条")
-        print(f"代码通过: {code_pass_count} 条")
-        print(f"代码驳回: {code_reject_count} 条")
-        print(f"匹配数据量: {matched_count} 条")
+        # 代码判断结果统计
+        print("\n=== 代码判断结果统计 ===")
+        print(f"判断总数: {total_count} 条")
+        print(f"通过数量: {code_pass_count} 条")
+        print(f"驳回数量: {code_reject_count} 条")
+        print(f"待人工审核数量: {code_manual_count} 条")
+        
+        # 人工审核结果统计
+        manual_pass_count = len(df[df['审核结果'] == '通过'])
+        manual_reject_count = len(df[df['审核结果'] == '驳回'])
+        print("\n=== 人工审核结果统计 ===")
+        print(f"通过数量: {manual_pass_count} 条")
+        print(f"驳回数量: {manual_reject_count} 条")
+        
+        # 匹配统计（排除待人工审核的数据）
+        df_for_matching = df[df['总体审核结果'] != '待人工审核']
+        matched_count = len(df_for_matching[df_for_matching['审核结果'] == df_for_matching['总体审核结果']])
+        match_rate = ((matched_count+code_manual_count) / len(df_for_matching)) * 100 if len(df_for_matching) > 0 else 0
+        print("\n=== 匹配统计（不含待人工审核数据）===")
+        print(f"参与匹配计算数量: {len(df_for_matching)} 条")
+        print(f"匹配数量: {matched_count} 条")
         print(f"匹配率: {match_rate:.2f}%")
-        
-        # 分析不一致数据
-        df_discrepancy = df[df['审核结果'] != df['总体审核结果']]
-        human_reject_code_pass = df_discrepancy[
-            (df_discrepancy['审核结果'] == '驳回') & 
-            (df_discrepancy['总体审核结果'] == '通过')
-        ]
-        human_pass_code_reject = df_discrepancy[
-            (df_discrepancy['审核结果'] == '通过') & 
-            (df_discrepancy['总体审核结果'] == '驳回')
-        ]
-        
-        print(f"\n=== 不一致数据分析 ===")
-        print(f"人工驳回但代码通过: {len(human_reject_code_pass)} 条")
-        print(f"人工通过但代码驳回: {len(human_pass_code_reject)} 条")
-        
-        # 分析人工驳回但代码通过的高频词
-        if len(human_reject_code_pass) > 0:
-            print("\n=== 人工驳回但代码通过的高频词分析（前10） ===")
-            words = []
-            for content in human_reject_code_pass['短信内容']:
-                if isinstance(content, str):
-                    # 使用正则表达式匹配中文词组（2个或更多字符）
-                    words.extend(re.findall(r'[\u4e00-\u9fa5]{2,}', content))
-            
-            # 统计词频
-            word_counts = Counter(words)
-            
-            # 输出前10个高频词
-            for word, count in word_counts.most_common(10):
-                print(f"{word}: {count}次")
-            
-        # 保存不一致数据
-        if len(human_reject_code_pass) > 0:
-            human_reject_code_pass.to_excel(f"人工驳回代码通过数据_{timestamp}.xlsx", index=False)
-        if len(human_pass_code_reject) > 0:
-            human_pass_code_reject.to_excel(f"人工通过代码驳回数据_{timestamp}.xlsx", index=False)
-                
+
+
+            # 统计不匹配情况
+        code_pass_manual_reject = len(df[(df['总体审核结果'] == '通过') & (df['审核结果'] == '驳回')])
+        code_reject_manual_pass = len(df[(df['总体审核结果'] == '驳回') & (df['审核结果'] == '通过')])
+
+        print("\n=== 不匹配情况分析 ===")
+        print(f"代码通过但人工驳回数量: {code_pass_manual_reject} 条")
+        print(f"代码驳回但人工通过数量: {code_reject_manual_pass} 条")
+
         return output_file
         
     except Exception as e:
