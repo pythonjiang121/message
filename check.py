@@ -33,7 +33,7 @@ class SMSChecker:
             if score_match:
                 score = float(score_match.group(1))
                 # 60-80分需要人工审核
-                if 60 <= score < 80:
+                if 60 <= score < 90:
                     business_passed = None  # 使用None表示需要人工审核
                     business_reason = f"需人工审核 (总分: {score:.2f})"
         except Exception as e:
@@ -134,7 +134,7 @@ def process_excel(input_file: str) -> str:
         # 匹配统计（排除待人工审核的数据）
         df_for_matching = df[df['总体审核结果'] != '待人工审核']
         matched_count = len(df_for_matching[df_for_matching['审核结果'] == df_for_matching['总体审核结果']])
-        match_rate = ((matched_count+code_manual_count) / len(df_for_matching)) * 100 if len(df_for_matching) > 0 else 0
+        match_rate = ((matched_count) / len(df_for_matching)) * 100 if len(df_for_matching) > 0 else 0
         print("\n=== 匹配统计（不含待人工审核数据）===")
         print(f"参与匹配计算数量: {len(df_for_matching)} 条")
         print(f"匹配数量: {matched_count} 条")
