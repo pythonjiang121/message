@@ -1,6 +1,8 @@
 import re  
 import json
 import jieba.posseg as pseg
+import cpca
+import pandas as pd
 from typing import Tuple, Dict, List, Set
 
 class BusinessValidator:
@@ -13,31 +15,12 @@ class BusinessValidator:
 
     # 关键词常量定义
     STORE_KEYWORDS: Set[str] = {"旗舰店", "专卖店"}
-    LOGISTICS_KEYWORDS: Set[str] = {
-        "快递", "物流", "派送", "配送", "运单", "包裹", "签收", "取件",
-        "收件", "发件", "寄件", "运输", "送货", "揽收", "仓储", "仓库",
-        "货运", "提货", "站点"
-    }
     WECHAT_KEYWORDS: Set[str] = {"微信", "公众号", "关注", "小程序"}
     NAME_WHITELIST: Set[str] = {"您好", "本人"}
     LIVE_STREAMING_KEYWORDS: Set[str] = {"直播", "带货", "主播", "观看直播", "直播间", "连麦"}
     # 添加中性签名列表
     NEUTRAL_SIGNATURES: Set[str] = {"温馨提示", "恭喜发财", "市燃气办"}
 
-    # 添加地址相关关键词
-    ADDRESS_KEYWORDS: Set[str] = {
-        "路", "街", "巷", "号", "楼", "层", "室", "区", "市", "省", "县",
-        "大厦", "广场", "小区", "商场", "商铺", "门店", "店铺", "写字楼",
-        "园区", "工业区", "开发区", "地址", "位于", "坐落于", "交汇", "交叉口",
-        "十字路口", "路口", "路段", "道", "镇", "村", "社区", "街道"
-    }
-
-    # 添加地址组合词
-    ADDRESS_COMPOUND_WORDS: Set[str] = {
-        "交汇处", "十字路口", "环路", "大街", "交叉路口",
-        "商业街", "商业区", "居民区", "工业园", "科技园",
-        "创业园", "产业园", "文化园", "生态园"
-    }
 
     # 定义评分规则
     SCORE_RULES = {
@@ -66,21 +49,16 @@ class BusinessValidator:
         'DEDUCTIONS': {
             # 地址相关扣分规则
             'ADDRESS': {
-                'keywords': {
-                    '路', '街', '巷', '号', '楼', '层', '室', '区', '市', '省', '县',
-                    '大厦', '广场', '小区', '商场', '商铺', '门店', '店铺', '写字楼',
-                    '园区', '工业区', '开发区', '地址', '位于', '坐落于'
-                },
-                'score': -3,  # 每个地址关键词扣3分
-                'max_deduction': -10,  # 最大扣分10分
+                'score': -2,  # 每个地址特征扣3分
+                'max_deduction': -8,  # 最大扣分10分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -2,  # 通知类每个地址关键词扣2分
-                        'max_deduction': -6  # 通知类最大扣分6分
+                        'score': -2,  # 通知类每个地址特征扣2分
+                        'max_deduction': -8  # 通知类最大扣分6分
                     },
                     '会销-普通': {
-                        'score': -2,  # 会销普通类每个地址关键词扣2分
-                        'max_deduction': -6  # 会销普通类最大扣分6分
+                        'score': -2,  # 会销普通类每个地址特征扣2分
+                        'max_deduction': -8  # 会销普通类最大扣分6分
                     }
                 }
             },
@@ -303,6 +281,22 @@ class BusinessValidator:
                     }
                 }
             },
+
+            # 链接相关扣分规则
+            'LINK': {
+                'score': -2,  # 每个链接扣2分
+                'max_deduction': -6,  # 最大扣分6分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -6,  # 通知类每个链接扣1分
+                        'max_deduction': -6  # 通知类最大扣分3分
+                    },
+                    '会销-普通': {
+                        'score': -6,  # 会销普通类每个链接扣1分
+                        'max_deduction': -6  # 会销普通类最大扣分3分
+                    }
+                }
+            },
         },
         
         # 加分规则
@@ -443,6 +437,61 @@ class BusinessValidator:
 
         return True, "审核通过"
 
+    def _contains_address(self, text: str) -> Tuple[bool, int, List[str]]:
+        """
+        使用cpca库检测文本中是否包含详细地址
+        
+        Args:
+            text: 待检查的文本
+            
+        Returns:
+            Tuple[bool, int, List[str]]: (是否包含地址, 地址特征数量, 检测到的地址列表)
+        """
+        # 使用cpca进行地址识别
+        df = pd.DataFrame([text], columns=['地址'])
+        df_with_addr = cpca.transform(df['地址'])
+        
+        # 只在地址列有内容时才判定为存在地址
+        has_address = not df_with_addr['地址'].isna().all() and df_with_addr['地址'][0]
+        
+        # 提取检测到的地址
+        detected_addresses = []
+        if has_address:
+            # 构建完整地址
+            for i in range(len(df_with_addr)):
+                addr_parts = []
+                if not pd.isna(df_with_addr['省'][i]):
+                    addr_parts.append(df_with_addr['省'][i])
+                if not pd.isna(df_with_addr['市'][i]):
+                    addr_parts.append(df_with_addr['市'][i])
+                if not pd.isna(df_with_addr['区'][i]):
+                    addr_parts.append(df_with_addr['区'][i])
+                if not pd.isna(df_with_addr['地址'][i]):
+                    addr_parts.append(df_with_addr['地址'][i])
+                
+                if addr_parts:
+                    detected_addresses.append(''.join(addr_parts))
+        
+        # 计算地址特征分数
+        addr_score = 0
+        
+        # 基于cpca检测结果
+        if has_address:
+            # 基础分数
+            addr_score += 1
+            
+            # 检查地址完整度，每有一个组成部分增加1分
+            if not df_with_addr['省'].isna().all():
+                addr_score += 1
+            if not df_with_addr['市'].isna().all():
+                addr_score += 1
+            if not df_with_addr['区'].isna().all():
+                addr_score += 1
+            if not df_with_addr['地址'].isna().all() and df_with_addr['地址'][0]:
+                addr_score += 1
+        
+        return has_address, addr_score, detected_addresses
+
     def _score_industry(self, business_type: str, cleaned_content: str, cleaned_signature: str) -> Tuple[bool, str]:
         """
         行业类短信的评分实现
@@ -463,19 +512,7 @@ class BusinessValidator:
         if self._contains_private_number(cleaned_content):
             final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "行业类短信不允许包含私人号码"
-            
-        # 检查地址关键词（仅对行业-通知类型进行扣分）
-        if business_type == "行业-通知":
-            has_address, address_features = self._contains_address(cleaned_content)
-            if has_address:
-                # 根据地址特征数量计算扣分，但不超过最大扣分限制
-                deduction = min(
-                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific'][business_type]['score'] * address_features,
-                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific'][business_type]['max_deduction']
-                )
-                final_score += deduction
-                self.score_details['deductions'].append(f"地址信息扣分: {deduction} (特征数量: {address_features})")
-            
+                        
         # 检查营销关键词
         marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['keywords'] if keyword in cleaned_content)
         if marketing_matches > 0:
@@ -506,9 +543,6 @@ class BusinessValidator:
         
         # 应用业务特定规则
         if business_type == "行业-通知":
-            # 签名验证
-            if any(keyword in cleaned_signature for keyword in self.STORE_KEYWORDS):
-                final_score -= 10
                 
             # 验证直播相关内容
             if any(keyword in cleaned_content for keyword in self.LIVE_STREAMING_KEYWORDS):
@@ -550,10 +584,37 @@ class BusinessValidator:
             weak_education_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['EDUCATION']['weak_keywords'] if keyword in cleaned_content)
             if weak_education_matches > 0:
                 final_score += self.SCORE_RULES['DEDUCTIONS']['EDUCATION']['business_specific']['行业-通知']['weak_score'] * weak_education_matches
-                
+                        
+            # 检查地址
+            has_address, address_score, detected_addresses = self._contains_address(cleaned_content)
+            if has_address:
+                deduction = min(
+                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific']['行业-通知']['score'] * address_score,
+                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific']['行业-通知']['max_deduction']
+                )
+                final_score += deduction
+                address_info = ", ".join(detected_addresses) if detected_addresses else f"地址特征分数: {address_score}"
+                self.score_details['deductions'].append(f"地址扣分: {deduction} ({address_info})")
+
+        
         elif business_type == "行业-物流":
-            if not any(keyword in cleaned_content for keyword in self.LOGISTICS_KEYWORDS):
+            # 检查物流关键词并应用加分规则
+            logistics_keywords = self.SCORE_RULES['BONUSES']['LOGISTICS']['keywords']
+            logistics_matches = sum(1 for keyword in logistics_keywords if keyword in cleaned_content)
+            if logistics_matches > 0:
+                # 获取物流加分规则
+                logistics_bonus = self.SCORE_RULES['BONUSES']['LOGISTICS']
+                # 计算加分（每个匹配关键词加分）
+                bonus = min(
+                    logistics_bonus['business_specific']['行业-物流']['score'] * logistics_matches,
+                    logistics_bonus['business_specific']['行业-物流']['max_bonus']
+                )
+                final_score += bonus
+                self.score_details['bonuses'].append(f"物流关键词加分: +{bonus} (匹配数量: {logistics_matches})")
+            else:
+                # 如果没有物流关键词，则扣分
                 final_score -= 30
+                self.score_details['deductions'].append("缺少物流关键词扣分: -30")
                 
         # 更新评分详情
         self.score_details['final_score'] = final_score
@@ -591,17 +652,7 @@ class BusinessValidator:
             final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "会销类短信不允许包含私人号码"
             
-        # 检查地址关键词（仅对会销-普通类型进行扣分）
-        if business_type == "会销-普通":
-            has_address, address_features = self._contains_address(cleaned_content)
-            if has_address:
-                deduction = min(
-                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific'][business_type]['score'] * address_features,
-                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific'][business_type]['max_deduction']
-                )
-                final_score += deduction
-                self.score_details['deductions'].append(f"地址信息扣分: {deduction} (特征数量: {address_features})")
-            
+       
         # 检查营销关键词
         marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['keywords'] if keyword in cleaned_content)
         if marketing_matches > 0:
@@ -629,7 +680,7 @@ class BusinessValidator:
             deduction = self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['score'] * points_expiry_matches
             deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['max_deduction'])
             final_score += deduction
-            
+        
         # 会销-普通特殊验证
         if business_type == "会销-普通":
             # 检查活动类特征词
@@ -651,6 +702,17 @@ class BusinessValidator:
                 final_score -= 20
             elif wechat_matches == 1:
                 final_score -= 10
+                
+            # 检查地址
+            has_address, address_score, detected_addresses = self._contains_address(cleaned_content)
+            if has_address:
+                deduction = min(
+                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific']['会销-普通']['score'] * address_score,
+                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific']['会销-普通']['max_deduction']
+                )
+                final_score += deduction
+                address_info = ", ".join(detected_addresses) if detected_addresses else f"地址特征分数: {address_score}"
+                self.score_details['deductions'].append(f"地址扣分: {deduction} ({address_info})")
                 
         # 更新评分详情
         self.score_details['final_score'] = final_score
@@ -760,62 +822,48 @@ class BusinessValidator:
             if business_type in types:
                 return category
         return ""
-
-    def _contains_address(self, text: str) -> Tuple[bool, int]:
+    
+    def _contains_link(self, text: str) -> Tuple[bool, int]:
         """
-        检查文本中是否包含地址信息，返回是否包含地址和地址特征数量
+        使用正则表达式检查文本中是否包含链接
         
         Args:
             text: 待检查的文本
             
         Returns:
-            Tuple[bool, int]: (是否包含地址, 地址特征数量)
+            Tuple[bool, int]: (是否包含链接, 链接数量)
         """
-        address_features = 0
-        
-        # 1. 检查地址关键词
-        keyword_matches = sum(1 for keyword in self.ADDRESS_KEYWORDS if keyword in text)
-        address_features += keyword_matches
-        
-        # 2. 检查地址组合词
-        compound_matches = sum(1 for word in self.ADDRESS_COMPOUND_WORDS if word in text)
-        address_features += compound_matches * 2  # 组合词权重更高
-        
-        # 3. 使用正则表达式匹配常见地址格式
-        address_patterns = [
-            # 省市区格式
-            r'[^\d\s]{2,}[省市][^\d\s]{2,}[市区县][^\d\s]{2,}',
-            # XX路XX号
-            r'[^\d\s]{2,}[路街巷道][1-9]\d*号',
-            # XX路与XX路交叉
-            r'[^\d\s]{2,}[路街道].*?[与和].*?[路街道][交叉汇合]',
-            # 小区名称
-            r'[^\d\s]{2,}[家园小区花园广场城]',
-            # 门牌号
-            r'[a-zA-Z1-9]\d*[栋幢号楼]',
-            # 具体楼层
-            r'\d+[层楼]-\d+[层楼]|\d+[层楼]',
-            # 具体房间
-            r'[a-zA-Z1-9]\d*室',
-            # 开发区/园区
-            r'[^\d\s]{2,}[开发园工业科技]区'
+        # 定义链接匹配模式
+        url_patterns = [
+            # 标准URL格式（支持更多协议）
+            r'(?:https?|ftp|file|ws|wss)://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[^\s]*',
+            
+            # 带www的网址（支持更多子域名）
+            r'(?:www|wap|m)\.(?:[-\w.]|(?:%[\da-fA-F]{2}))+[^\s]*',
+            
+            # 常见顶级域名格式（扩展域名列表）
+            r'(?:[-\w.]|(?:%[\da-fA-F]{2}))+\.(?:com|cn|net|org|gov|edu|io|app|xyz|top|me|tv|cc|shop|vip|ltd|store|online|tech|site|wang|cloud|link|live|work|game|fun|art|xin|ren|space|team|news|law|group|center|city|world|life|co|red|mobi|pro|info|name|biz|asia|tel|club|social|video|press|company|website|email|network|studio|design|software|blog|wiki|forum|run|zone|plus|cool|show|gold|today|market|business|company|zone|media|agency|directory|technology|solutions|international|enterprises|industries|management|consulting|services)(?:/[^\s]*)?',
+            
+            # 短链接格式（扩展常见短链接服务）
+            r'(?:t|u|dwz|url|c|s|m|j|h5|v|w)\.(?:cn|com|me|ly|gl|gd|ink|run|app|fun|pub|pro|vip|cool|link|live|work|game|art|red|tel|club|show|gold|today)(?:/[-\w]+)+',
+            
+            # 特定平台短链接，包括淘宝、京东、饿了么、抖音、微博等
+            r'(?:tb\.cn|jd\.com|ele\.me|douyin\.com|weibo\.com|qq\.com|taobao\.com|tmall\.com|pinduoduo\.com|kuaishou\.com|bilibili\.com|youku\.com|iqiyi\.com|meituan\.com|dianping\.com|alipay\.com|weixin\.qq\.com)/[-\w/]+',
+            
+            # IP地址格式链接（支持IPv6）
+            r'https?://(?:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4})(?::\d+)?(?:/[^\s]*)?'
         ]
         
-        for pattern in address_patterns:
-            if re.search(pattern, text):
-                address_features += 2  # 匹配到完整地址模式，权重更高
+        # 合并所有模式
+        combined_pattern = '|'.join(f'({pattern})' for pattern in url_patterns)
         
-        # 4. 检查数字和方位词的组合
-        direction_patterns = [
-            r'东|西|南|北|中|内|外|前|后|左|右',
-            r'[东西南北][东西南北]'
-        ]
+        # 查找所有匹配项
+        matches = re.findall(combined_pattern, text, re.IGNORECASE)
         
-        for pattern in direction_patterns:
-            if re.search(pattern, text):
-                address_features += 1
+        # 计算匹配数量（matches是一个元组列表，每个元组包含所有捕获组）
+        link_count = sum(1 for match in matches if any(match))
         
-        return address_features >= 2, address_features  # 至少需要2个地址特征才判定为地址
+        return link_count > 0, link_count
 
 # 定义有效的客户类型
 客户类型 = ["云平台", "直客", "类直客", "渠道"]
@@ -830,9 +878,6 @@ def validate_account_type(account_type: str) -> Tuple[bool, str]:
     Returns:
         Tuple[bool, str]: (是否通过验证, 验证结果说明)
     """
-    # 检查是否为有效的客户类型
-    if account_type not in 客户类型:
-        return False, f"无效的客户类型，有效类型为: {', '.join(客户类型)}"
     
     # 直客类型直接放行
     if account_type == "直客":
@@ -872,6 +917,26 @@ def validate_business(business_type: str, content: str, signature: str, account_
         # 将中性签名信息传递给内部验证函数
         validator.neutral_signature_deduction = 50
     
-    # 5. 进行业务验证
+    # 5. 检查链接并扣分
+    has_link, link_count = validator._contains_link(cleaned_content)
+    if has_link:
+        # 根据业务类型获取链接扣分规则
+        link_rules = validator.SCORE_RULES['DEDUCTIONS']['LINK']
+        if business_type in link_rules['business_specific']:
+            # 使用特定业务类型的规则
+            deduction = min(
+                link_rules['business_specific'][business_type]['score'] * link_count,
+                link_rules['business_specific'][business_type]['max_deduction']
+            )
+        else:
+            # 使用默认规则
+            deduction = min(
+                link_rules['score'] * link_count,
+                link_rules['max_deduction']
+            )
+        validator.link_deduction = deduction
+        validator.link_count = link_count
+    
+    # 6. 进行业务验证
     return validator._validate_business_internal(business_type, cleaned_content, cleaned_signature, account_type)
 
