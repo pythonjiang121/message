@@ -1,9 +1,12 @@
 import re  
-import json
-import jieba.posseg as pseg
 import cpca
 import pandas as pd
 from typing import Tuple, Dict, List, Set
+import json
+import jieba.posseg as pseg
+
+
+
 
 class BusinessValidator:
     # 业务类型库
@@ -27,7 +30,7 @@ class BusinessValidator:
         # 基础分数
         'BASE_SCORE': {
             '行业': {
-                '行业-通知': 90,  # 降低通知类基础分
+                '行业-通知': 100,  # 降低通知类基础分
                 '行业-物流': 100,   # 保持物流类基础分
             },
             '会销': {
@@ -35,30 +38,30 @@ class BusinessValidator:
                 '会销-金融': 100,   # 降低会销类基础分
             },
             '拉新': {
-                '拉新-催收': 85,   # 降低催收类基础分
-                '拉新-教育': 85,   # 降低教育类基础分
-                '拉新-网贷': 85,   # 降低网贷类基础分
-                '拉新-展会': 85,   # 降低展会类基础分
-                '拉新-医美': 85,   # 降低医美类基础分
-                '拉新-pos机': 85   # 降低pos机类基础分
+                '拉新-催收': 100,   # 降低催收类基础分
+                '拉新-教育': 100,   # 降低教育类基础分
+                '拉新-网贷': 100,   # 降低网贷类基础分
+                '拉新-展会': 100,   # 降低展会类基础分
+                '拉新-医美': 100,   # 降低医美类基础分
+                '拉新-pos机': 100   # 降低pos机类基础分
             },
-            'default': 85
+            'default': 100
         },
         
         # 扣分规则
         'DEDUCTIONS': {
             # 地址相关扣分规则
             'ADDRESS': {
-                'score': -2,  # 每个地址特征扣3分
-                'max_deduction': -8,  # 最大扣分10分
+                'score': -5,  # 每个地址特征扣3分
+                'max_deduction': -10,  # 最大扣分10分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -2,  # 通知类每个地址特征扣2分
-                        'max_deduction': -8  # 通知类最大扣分6分
+                        'score': -5,  # 通知类每个地址特征扣2分
+                        'max_deduction': -10  # 通知类最大扣分6分
                     },
                     '会销-普通': {
-                        'score': -2,  # 会销普通类每个地址特征扣2分
-                        'max_deduction': -8  # 会销普通类最大扣分6分
+                        'score': -5,  # 会销普通类每个地址特征扣2分
+                        'max_deduction': -10  # 会销普通类最大扣分6分
                     }
                 }
             },
@@ -69,19 +72,19 @@ class BusinessValidator:
                     '优惠', '特惠', '红包', '亲爱的', 'app', 'App', 'APP',
                     '特价', '折扣', '促销', '活动'
                 },
-                'score': -5,  # 增加扣分
-                'max_deduction': -20,  # 增加最大扣分
+                'score': -10,  # 增加扣分
+                'max_deduction': -30,  # 增加最大扣分
                 'strong_keywords': {
                     '抢购', '限量', '福利', '奖励', '领取', '权益', '抢',
-                    '秒杀', '特供', '专享', '尊享', '特权', '免费', '报名', '超值',
+                    '秒杀', '特供', '专享', '尊享', '特权', '免费', '报名', '超值', '多赚','详情'
                     '参加', '参与', '领取', '抢', '限时', '倒计时' ,'缴费', '尊敬' ,'咨询', '电话', '详讯' ,'预约' ,'消费' ,'惊喜'
                 },
-                'strong_score': -8,  # 增加强关键词扣分
+                'strong_score': -20,  # 增加强关键词扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -10,  # 增加通知类营销内容扣分 
-                        'max_deduction': -20,  # 增加最大扣分
-                        'strong_score': -10    # 增加强关键词扣分
+                        'score': -20,  # 增加通知类营销内容扣分 
+                        'max_deduction': -40,  # 增加最大扣分
+                        'strong_score': -20    # 增加强关键词扣分
                     }
                 }
             },
@@ -92,12 +95,12 @@ class BusinessValidator:
                     '积分', '兑换', '+', '元', '领取', '使用', '会员',
                     '服务', '活动', '奖励', '赠送', '优惠券', '里程'
                 },
-                'score': -5,  # 增加扣分
-                'max_deduction': -15,  # 增加最大扣分
+                'score': -10,  # 增加扣分
+                'max_deduction': -30,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -10,  # 增加通知类扣分
-                        'max_deduction': -20   # 增加最大扣分
+                        'score': -15,  # 增加通知类扣分
+                        'max_deduction': -45   # 增加最大扣分
                     }
                 }
             },
@@ -108,12 +111,12 @@ class BusinessValidator:
                     '积分', '到期', '过期', '清零', '作废', '失效',
                     '即将到期', '即将清零', '即将作废', '清理', '清空' ,'逾期'
                 },
-                'score': -8,  # 增加扣分
-                'max_deduction': -15,  # 增加最大扣分
+                'score': -15,  # 增加扣分
+                'max_deduction': -30,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -5,  # 增加通知类扣分
-                        'max_deduction': -10  # 增加最大扣分
+                        'score': -15,  # 增加通知类扣分
+                        'max_deduction': -30  # 增加最大扣分
                     }
                 }
             },
@@ -125,12 +128,12 @@ class BusinessValidator:
                     '用工', '聘用', '招工', '用人', '入职', '应届生',
                     '社招', '校招', '人才', '求贤', '职场'
                 },
-                'score': -8,  # 增加扣分
-                'max_deduction': -20,  # 增加最大扣分
+                'score': -5,  # 增加扣分
+                'max_deduction': -15,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -5,  # 增加通知类扣分
-                        'max_deduction': -10  # 增加最大扣分
+                        'score': -10,  # 增加通知类扣分
+                        'max_deduction': -20  # 增加最大扣分
                     }
                 }
             },
@@ -141,12 +144,12 @@ class BusinessValidator:
                     '参会', '会议', '论坛', '峰会', '研讨会', '座谈会',
                     '年会', '发布会', '见面会', '交流会', '答谢会', '分享会', '学会'
                 },
-                'score': -6,  # 增加扣分
-                'max_deduction': -15,  # 增加最大扣分
+                'score': -10,  # 增加扣分
+                'max_deduction': -30,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -3,  # 增加通知类扣分
-                        'max_deduction': -8  # 增加最大扣分
+                        'score': -15,  # 增加通知类扣分
+                        'max_deduction': -30  # 增加最大扣分
                     }
                 }
             },
@@ -156,12 +159,12 @@ class BusinessValidator:
                 'keywords': {
                     '交友', '相亲', '留言'
                 },
-                'score': -10,  # 增加扣分
-                'max_deduction': -20,  # 增加最大扣分
+                'score': -15,  # 增加扣分
+                'max_deduction': -30,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -8,  # 增加通知类扣分
-                        'max_deduction': -15  # 增加最大扣分
+                        'score': -15,  # 增加通知类扣分
+                        'max_deduction': -30  # 增加最大扣分
                     }
                 }
             },
@@ -171,12 +174,12 @@ class BusinessValidator:
                 'keywords': {
                     '征兵', '入伍'
                 },
-                'score': -10,  # 增加扣分
-                'max_deduction': -20,  # 增加最大扣分
+                'score': -15,  # 增加扣分
+                'max_deduction': -30,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -8,  # 增加通知类扣分
-                        'max_deduction': -15  # 增加最大扣分
+                        'score': -15,  # 增加通知类扣分
+                        'max_deduction': -30  # 增加最大扣分
                     }
                 }
             },
@@ -184,12 +187,12 @@ class BusinessValidator:
             # 问卷调查扣分规则
             'SURVEY': {
                 'keywords': {'问卷', '调查', '调研', '反馈', '评价'},
-                'score': -8,  # 增加扣分
-                'max_deduction': -15,  # 增加最大扣分
+                'score': -10,  # 增加扣分
+                'max_deduction': -30,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -5,  # 增加通知类扣分
-                        'max_deduction': -10  # 增加最大扣分
+                        'score': -15,  # 增加通知类扣分
+                        'max_deduction': -30  # 增加最大扣分
                     }
                 }
             },
@@ -201,13 +204,13 @@ class BusinessValidator:
                     '学习', '辅导', '补习', '讲座', '公开课', '作业',
                     '练习册', '习题', '老师', '干货'
                 },
-                'score': -6,  # 增加扣分
+                'score': -10,  # 增加扣分
                 'weak_keywords': {'练习册', '作业', '习题', '老师', '干货'},
-                'weak_score': -3,  # 增加弱关键词扣分
+                'weak_score': -30,  # 增加弱关键词扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -3,  # 增加通知类扣分
-                        'weak_score': -2  # 增加弱关键词扣分
+                        'score': -15,  # 增加通知类扣分
+                        'weak_score': -30  # 增加弱关键词扣分
                     }
                 }
             },
@@ -219,30 +222,29 @@ class BusinessValidator:
                     '简历', '岗位', '职位', '入职', '工作', '薪资',
                     '人才', '求贤', '职场'
                 },
-                'score': -8,  # 增加扣分
+                'score': -10,  # 增加扣分
                 'max_deduction': -20,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -5,  # 增加通知类扣分
-                        'max_deduction': -10  # 增加最大扣分
+                        'score': -15,  # 增加通知类扣分
+                        'max_deduction': -30  # 增加最大扣分
                     }
                 }
             },
             
-            # 时间相关扣分规则
+            # 时间相关扣分规则，未使用
             'TIME_RELATED': {
                 'keywords': {
                     '截止', '限时', '倒计时', '最后', '即将',
-                    '过期', '到期', '结束', '开始', '期间',
-                    '小时', '日', '月', '年', '上午', '下午',
-                    '晚上', '今晚', '明天', '后天'
+                    '过期', '到期', '结束', '开始'
+                    
                 },
-                'score': -3,  # 增加扣分
-                'max_deduction': -8,  # 增加最大扣分
+                'score': -10,  # 增加扣分
+                'max_deduction': -20,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -2,  # 增加通知类扣分
-                        'max_deduction': -5   # 增加最大扣分
+                        'score': -15,  # 增加通知类扣分
+                        'max_deduction': -30   # 增加最大扣分
                     }
                 }
             },
@@ -255,16 +257,36 @@ class BusinessValidator:
                     '微信', '公众号', '小程序', 'APP', 'app',
                     '链接', '网址', '网站', '登录', '注册'
                 },
-                'score': -4,  # 增加扣分
-                'max_deduction': -10,  # 增加最大扣分
+                'score': -10,  # 增加扣分
+                'max_deduction': -30,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -2,  # 增加通知类扣分
-                        'max_deduction': -5   # 增加最大扣分
+                        'score': -15,  # 增加通知类扣分
+                        'max_deduction': -30   # 增加最大扣分
                     },
                     '会销-普通': {
-                        'score': -4,  # 会销普通类每个平台关键词扣4分
-                        'max_deduction': -10  # 会销普通类最大扣分10分
+                        'score': -10,  # 会销普通类每个平台关键词扣4分
+                        'max_deduction': -30  # 会销普通类最大扣分10分
+                    }
+                }
+            },
+            
+            # 固定电话扣分规则
+            'FIXED_PHONE': {
+                'score': -15,  # 每个固定电话扣8分
+                'max_deduction': -30,  # 最大扣分16分
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -15,  # 通知类每个固定电话扣15分
+                        'max_deduction': -30  # 通知类最大扣分30分
+                    },
+                    '会销-普通': {
+                        'score': -15,  # 会销普通类每个固定电话扣15分
+                        'max_deduction': -30  # 会销普通类最大扣分30分
+                    },
+                    '拉新-催收': {
+                        'score': -15,  # 催收类每个固定电话扣15分
+                        'max_deduction': -30  # 催收类最大扣分30分
                     }
                 }
             },
@@ -272,32 +294,32 @@ class BusinessValidator:
             # 微信公众号相关扣分规则
             'WECHAT': {
                 'keywords': {'微信', '公众号', '关注', '小程序', 'APP', 'app'},
-                'score': -5,  # 增加扣分
-                'max_deduction': -10,  # 增加最大扣分
+                'score': -10,  # 增加扣分
+                'max_deduction': -30,  # 增加最大扣分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -3,  # 增加通知类扣分
-                        'max_deduction': -8   # 增加最大扣分
+                        'score': -15,  # 增加通知类扣分
+                        'max_deduction': -30   # 增加最大扣分
                     },
                     '会销-普通': {
-                        'score': -5,  # 增加会销类扣分
-                        'max_deduction': -10
+                        'score': -15,  # 增加会销类扣分
+                        'max_deduction': -30
                     }
                 }
             },
 
             # 链接相关扣分规则
             'LINK': {
-                'score': -2,  # 每个链接扣2分
-                'max_deduction': -6,  # 最大扣分6分
+                'score': -10,  # 每个链接扣2分
+                'max_deduction': -20,  # 最大扣分6分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -6,  # 通知类每个链接扣1分
-                        'max_deduction': -6  # 通知类最大扣分3分
+                        'score': -10,  # 通知类每个链接扣1分
+                        'max_deduction': -20  # 通知类最大扣分3分
                     },
                     '会销-普通': {
-                        'score': -6,  # 会销普通类每个链接扣1分
-                        'max_deduction': -6  # 会销普通类最大扣分3分
+                        'score': -10,  # 会销普通类每个链接扣1分
+                        'max_deduction': -20  # 会销普通类最大扣分3分
                     }
                 }
             },
@@ -320,39 +342,46 @@ class BusinessValidator:
                     }
                 }
             },
-        
             
-           
+            # 特定签名加分
+            'SPECIAL_SIGNATURE': {
+                'signatures': {'饿了么'},
+                'score': 20,
+                'max_bonus': 20
+            },
+            
+            # 特定关键词签名加分
+            'SPECIAL_KEYWORDS': {
+                'keywords': {'政府', '机关', '电力', '部委', '公安', '法院', '检察院'},
+                'score': 20,
+                'max_bonus': 20
+            }
         },
         
         # 直接否决规则（零容忍）
         'ZERO_TOLERANCE': {
             'PRIVATE_NUMBER': -100,  # 出现私人号码
-            'ILLEGAL_CONTENT': -100,  # 非法内容
-            'GAMBLING': -100,  # 赌博内容
-            'FRAUD': -100,  # 诈骗内容
-
         },
         
         # 及格分数线
         'PASS_SCORE': {
             '行业': {
-                '行业-通知': 70,  # 提高通过分数
-                '行业-物流': 65,  # 提高通过分数
+                '行业-通知': 60,  # 提高通过分数
+                '行业-物流': 60,  # 提高通过分数
             },
             '会销': {
-                '会销-普通': 65,  # 提高通过分数
-                '会销-金融': 65,  # 提高通过分数
+                '会销-普通': 60,  # 提高通过分数
+                '会销-金融': 60,  # 提高通过分数
             },
             '拉新': {
                 '拉新-催收': 60,  # 提高通过分数
-                '拉新-教育': 65,  # 提高通过分数
-                '拉新-网贷': 65,  # 提高通过分数
-                '拉新-展会': 65,  # 提高通过分数
-                '拉新-医美': 65,  # 提高通过分数
-                '拉新-pos机': 65  # 提高通过分数
+                '拉新-教育': 60,  # 提高通过分数
+                '拉新-网贷': 60,  # 提高通过分数
+                '拉新-展会': 60,  # 提高通过分数
+                '拉新-医美': 60,  # 提高通过分数
+                '拉新-pos机': 60  # 提高通过分数
             },
-            'default': 65  # 提高默认通过分数
+            'default': 60  # 提高默认通过分数
         },
     }
 
@@ -369,6 +398,7 @@ class BusinessValidator:
             self.surnames = set()
         self.current_account_type = None
         self.score_details = {}  # 用于存储评分详情
+    
 
     def _clean_content(self, content: str) -> str:
         """
@@ -418,7 +448,7 @@ class BusinessValidator:
         """
         self.current_account_type = account_type
         
-        # 重置评分详情
+        # 初始化评分详情
         self.score_details = {
             'base_score': self.SCORE_RULES['BASE_SCORE']['default'],
             'deductions': [],
@@ -439,7 +469,35 @@ class BusinessValidator:
         elif business_category == "拉新" and business_type == "拉新-催收":
             return self._score_collection(cleaned_content)
 
-        return True, "审核通过"
+        # 应用特定签名和关键词加分
+        final_score = self.score_details['final_score']
+        
+        # 应用特定签名加分
+        if cleaned_signature in self.SCORE_RULES['BONUSES']['SPECIAL_SIGNATURE']['signatures']:
+            bonus = self.SCORE_RULES['BONUSES']['SPECIAL_SIGNATURE']['score']
+            final_score += bonus
+            self.score_details['bonuses'].append(f"特定签名加分: +{bonus}")
+        
+        # 应用特定关键词签名加分
+        special_keywords = self.SCORE_RULES['BONUSES']['SPECIAL_KEYWORDS']['keywords']
+        if any(keyword in cleaned_signature for keyword in special_keywords):
+            bonus = self.SCORE_RULES['BONUSES']['SPECIAL_KEYWORDS']['score']
+            final_score += bonus
+            self.score_details['bonuses'].append(f"特定关键词签名加分: +{bonus}")
+        
+        # 更新最终得分
+        self.score_details['final_score'] = final_score
+        
+        # 判断是否通过
+        passed = final_score >= self.SCORE_RULES['PASS_SCORE']['default']
+        if passed:
+            reasons = [
+                f"基础分: {self.score_details['base_score']}",
+                f"最终得分: {final_score:.2f}"
+            ]
+            return True, f"审核通过 (原因: {', '.join(reasons)})"
+        else:
+            return False, f"审核不通过 (总分: {final_score:.2f})"
 
     def _contains_address(self, text: str) -> Tuple[bool, int, List[str]]:
         """
@@ -517,6 +575,17 @@ class BusinessValidator:
             final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "行业类短信不允许包含私人号码"
 
+
+        # 检查固定电话
+        has_fixed_phone, fixed_phone_count = self._contains_fixed_phone(cleaned_content)
+        if has_fixed_phone:
+            deduction = min(
+                self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['行业-通知']['score'] * fixed_phone_count,
+                self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['行业-通知']['max_deduction']
+            )
+            final_score += deduction
+            self.score_details['deductions'].append(f"固定电话扣分: {deduction} (数量: {fixed_phone_count})")
+
         #检测链接    
         has_link, link_count = self._contains_link(cleaned_content)
         if has_link:
@@ -561,6 +630,34 @@ class BusinessValidator:
             deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['business_specific']['行业-通知']['max_deduction'])
             final_score += deduction
             self.score_details['deductions'].append(f"平台关键词扣分: {deduction} (匹配数量: {platform_matches})")
+        
+        # 检查就业招聘关键词
+        employment_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['EMPLOYMENT']['keywords'] if keyword in cleaned_content)
+        if employment_matches > 0:
+            deduction = min(
+                self.SCORE_RULES['DEDUCTIONS']['EMPLOYMENT']['score'] * employment_matches,
+                self.SCORE_RULES['DEDUCTIONS']['EMPLOYMENT']['max_deduction']
+            )
+            final_score += deduction
+            self.score_details['deductions'].append(f"就业招聘关键词扣分: {deduction} (匹配数量: {employment_matches})")
+        
+        # 检查问卷调查关键词
+        survey_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['SURVEY']['keywords'] if keyword in cleaned_content)
+        if survey_matches > 0:
+            # 使用业务特定规则
+            if business_type in self.SCORE_RULES['DEDUCTIONS']['SURVEY']['business_specific']:
+                specific_rule = self.SCORE_RULES['DEDUCTIONS']['SURVEY']['business_specific'][business_type]
+                deduction = min(
+                    specific_rule['score'] * survey_matches,
+                    specific_rule['max_deduction']
+                )
+            else:
+                deduction = min(
+                    self.SCORE_RULES['DEDUCTIONS']['SURVEY']['score'] * survey_matches,
+                    self.SCORE_RULES['DEDUCTIONS']['SURVEY']['max_deduction']
+                )
+            final_score += deduction
+            self.score_details['deductions'].append(f"问卷调查关键词扣分: {deduction} (匹配数量: {survey_matches})")
         
         # 应用业务特定规则
         if business_type == "行业-通知":
@@ -672,6 +769,17 @@ class BusinessValidator:
         if self._contains_private_number(cleaned_content):
             final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "会销类短信不允许包含私人号码"
+
+
+        # 检查固定电话
+        has_fixed_phone, fixed_phone_count = self._contains_fixed_phone(cleaned_content)
+        if has_fixed_phone:
+            deduction = min(
+                self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['会销-普通']['score'] * fixed_phone_count,
+                self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['会销-普通']['max_deduction']
+            )
+            final_score += deduction
+            self.score_details['deductions'].append(f"固定电话扣分: {deduction} (数量: {fixed_phone_count})")
 
         #检测链接    
         has_link, link_count = self._contains_link(cleaned_content)
@@ -791,7 +899,21 @@ class BusinessValidator:
         if self._contains_private_number(cleaned_content):
             final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "催收类短信不允许包含私人号码"
-        
+
+        # 检查私人姓名
+        if self._find_chinese_names(cleaned_content):
+            final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
+            return False, "催收类短信不允许包含私人姓名"
+
+        # 检查固定电话
+        has_fixed_phone, fixed_phone_count = self._contains_fixed_phone(cleaned_content)
+        if has_fixed_phone:
+            deduction = min(
+                self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['拉新-催收']['score'] * fixed_phone_count,
+                self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['拉新-催收']['max_deduction']
+            )
+            final_score += deduction
+            self.score_details['deductions'].append(f"固定电话扣分: {deduction} (数量: {fixed_phone_count})")
 
         has_link, link_count = self._contains_link(cleaned_content)
         if has_link:
@@ -858,6 +980,7 @@ class BusinessValidator:
         
         return False  # 未找到符合条件的姓名
 
+
     def _get_business_category(self, business_type: str) -> str:
         """
         根据业务类型获取其所属的业务类别
@@ -915,6 +1038,34 @@ class BusinessValidator:
         
         return link_count > 0, link_count
 
+    def _contains_fixed_phone(self, text: str) -> Tuple[bool, int]:
+        """
+        检查文本中是否包含固定电话号码
+        
+        Args:
+            text: 待检查的文本
+            
+        Returns:
+            Tuple[bool, int]: (是否包含固定电话, 固定电话数量)
+        """
+        # 匹配固定电话模式
+        patterns = [
+            r'\d{3,4}-\d{7,8}',  # 区号-号码格式
+            r'\d{7,8}',          # 纯7-8位号码
+            r'\d{3,4}\s*\d{7,8}' # 区号和号码之间有空格
+        ]
+        
+        # 合并所有模式
+        combined_pattern = '|'.join(f'({pattern})' for pattern in patterns)
+        
+        # 查找所有匹配项
+        matches = re.findall(combined_pattern, text)
+        
+        # 计算匹配数量
+        phone_count = sum(1 for match in matches if any(match))
+        
+        return phone_count > 0, phone_count
+
 # 定义有效的客户类型
 客户类型 = ["云平台", "直客", "类直客", "渠道"]
 
@@ -953,15 +1104,6 @@ def validate_business(business_type: str, content: str, signature: str, account_
     cleaned_content = validator._clean_content(content)
     cleaned_signature = validator._clean_content(signature)
     
-    # 4. 特例判断：特定签名直接通过
-    if cleaned_signature == "饿了么":
-        return True, "特例直接通过"
-    
-    # 5. 特定关键词签名直接通过
-    special_keywords = ["政府", "机关", "电力", "部委", "公安", "法院", "检察院"]
-    if any(keyword in cleaned_signature for keyword in special_keywords):
-        return True, "关键词直接通过"
-    
-    # 6. 进行业务验证
+    # 4. 进行业务验证
     return validator._validate_business_internal(business_type, cleaned_content, cleaned_signature, account_type)
 
