@@ -73,7 +73,7 @@ class BusinessValidator:
                 'max_deduction': -20,  # 增加最大扣分
                 'strong_keywords': {
                     '抢购', '限量', '福利', '奖励', '领取', '权益', '抢',
-                    '秒杀', '特供', '专享', '尊享', '特权', '免费', '报名',
+                    '秒杀', '特供', '专享', '尊享', '特权', '免费', '报名', '超值',
                     '参加', '参与', '领取', '抢', '限时', '倒计时' ,'缴费', '尊敬' ,'咨询', '电话', '详讯' ,'预约' ,'消费' ,'惊喜'
                 },
                 'strong_score': -8,  # 增加强关键词扣分
@@ -261,6 +261,10 @@ class BusinessValidator:
                     '行业-通知': {
                         'score': -2,  # 增加通知类扣分
                         'max_deduction': -5   # 增加最大扣分
+                    },
+                    '会销-普通': {
+                        'score': -4,  # 会销普通类每个平台关键词扣4分
+                        'max_deduction': -10  # 会销普通类最大扣分10分
                     }
                 }
             },
@@ -307,12 +311,12 @@ class BusinessValidator:
                     '快递', '物流', '派送', '配送', '运输',
                     '包裹', '签收', '取件', '收件', '发件'
                 },
-                'score': 15,
-                'max_bonus': 25,
+                'score': 10,
+                'max_bonus': 20,
                 'business_specific': {
                     '行业-物流': {
-                        'score': 20,
-                        'max_bonus': 30
+                        'score': 10,
+                        'max_bonus': 20
                     }
                 }
             },
@@ -512,7 +516,16 @@ class BusinessValidator:
         if self._contains_private_number(cleaned_content):
             final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "行业类短信不允许包含私人号码"
-                        
+
+        #检测链接    
+        has_link, link_count = self._contains_link(cleaned_content)
+        if has_link:
+            deduction = min(
+                self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['行业-通知']['score'] * link_count,
+                self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['行业-通知']['max_deduction']
+            )
+            final_score += deduction
+
         # 检查营销关键词
         marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['keywords'] if keyword in cleaned_content)
         if marketing_matches > 0:
@@ -540,6 +553,14 @@ class BusinessValidator:
             deduction = self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['business_specific']['行业-通知']['score'] * points_expiry_matches
             deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['business_specific']['行业-通知']['max_deduction'])
             final_score += deduction
+        
+        # 检查平台关键词
+        platform_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['keywords'] if keyword in cleaned_content)
+        if platform_matches > 0:
+            deduction = self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['business_specific']['行业-通知']['score'] * platform_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['business_specific']['行业-通知']['max_deduction'])
+            final_score += deduction
+            self.score_details['deductions'].append(f"平台关键词扣分: {deduction} (匹配数量: {platform_matches})")
         
         # 应用业务特定规则
         if business_type == "行业-通知":
@@ -651,8 +672,16 @@ class BusinessValidator:
         if self._contains_private_number(cleaned_content):
             final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "会销类短信不允许包含私人号码"
-            
-       
+
+        #检测链接    
+        has_link, link_count = self._contains_link(cleaned_content)
+        if has_link:
+            deduction = min(
+                self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['会销-普通']['score'] * link_count,
+                self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['会销-普通']['max_deduction']
+            )
+            final_score += deduction
+
         # 检查营销关键词
         marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['keywords'] if keyword in cleaned_content)
         if marketing_matches > 0:
@@ -681,6 +710,14 @@ class BusinessValidator:
             deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['max_deduction'])
             final_score += deduction
         
+        # 检查平台关键词
+        platform_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['keywords'] if keyword in cleaned_content)
+        if platform_matches > 0:
+            deduction = self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['score'] * platform_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['max_deduction'])
+            final_score += deduction
+            self.score_details['deductions'].append(f"平台关键词扣分: {deduction} (匹配数量: {platform_matches})")
+        
         # 会销-普通特殊验证
         if business_type == "会销-普通":
             # 检查活动类特征词
@@ -689,7 +726,8 @@ class BusinessValidator:
             activity_matches = sum(1 for keyword in activity_keywords if keyword in cleaned_content)
             if activity_matches > 0:
                 final_score += 5 * activity_matches
-                
+
+
             # 检查会员服务相关词
             membership_keywords = {'尊敬的会员', '尊敬的客户', '尊敬的用户'}
             membership_matches = sum(1 for keyword in membership_keywords if keyword in cleaned_content)
@@ -713,7 +751,13 @@ class BusinessValidator:
                 final_score += deduction
                 address_info = ", ".join(detected_addresses) if detected_addresses else f"地址特征分数: {address_score}"
                 self.score_details['deductions'].append(f"地址扣分: {deduction} ({address_info})")
-                
+            # # 检查平台关键词
+            # platform_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['keywords'] if keyword in cleaned_content)
+            # if platform_matches > 0:
+            #     deduction = self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['score'] * platform_matches
+            #     deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['max_deduction'])
+            #     final_score += deduction
+            #     self.score_details['deductions'].append(f"平台关键词扣分: {deduction} (匹配数量: {platform_matches})")    
         # 更新评分详情
         self.score_details['final_score'] = final_score
         self.score_details['base_score'] = base_score
@@ -747,10 +791,16 @@ class BusinessValidator:
         if self._contains_private_number(cleaned_content):
             final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "催收类短信不允许包含私人号码"
-            
-        # 更新评分详情
-        self.score_details['final_score'] = final_score
-        self.score_details['base_score'] = base_score
+        
+
+        has_link, link_count = self._contains_link(cleaned_content)
+        if has_link:
+            deduction = min(
+                self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['拉新-催收']['score'] * link_count,
+                self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['拉新-催收']['max_deduction']
+            )
+            final_score += deduction    
+       
         
         # 判断是否通过
         passed = final_score >= self.SCORE_RULES['PASS_SCORE']['拉新']['拉新-催收']
@@ -888,54 +938,29 @@ def validate_account_type(account_type: str) -> Tuple[bool, str]:
 def validate_business(business_type: str, content: str, signature: str, account_type: str = None) -> Tuple[bool, str]:
     """
     外部调用的主要入口函数，用于验证短信的业务类型是否合规
-    
-    Args:
-        business_type: 业务类型（如"行业-通知"、"会销-普通"等）
-        content: 短信内容
-        signature: 短信签名
-        account_type: 客户类型（可选）
-        
-    Returns:
-        Tuple[bool, str]: (是否通过验证, 验证结果说明)
     """
-    # 1. 首先清理内容和签名
+    # 1. 首先验证客户类型
+    account_valid, account_reason = validate_account_type(account_type)
+    if not account_valid:
+        return False, account_reason
+        
+    # 2. 如果是直客，直接返回通过
+    if account_type == "直客":
+        return True, "直客类型直接通过"
+    
+    # 3. 清理内容和签名
     validator = BusinessValidator()
     cleaned_content = validator._clean_content(content)
     cleaned_signature = validator._clean_content(signature)
     
-    # 2. 特例判断：特定签名直接通过
+    # 4. 特例判断：特定签名直接通过
     if cleaned_signature == "饿了么":
         return True, "特例直接通过"
     
-    # 3. 特定关键词签名直接通过
+    # 5. 特定关键词签名直接通过
     special_keywords = ["政府", "机关", "电力", "部委", "公安", "法院", "检察院"]
     if any(keyword in cleaned_signature for keyword in special_keywords):
         return True, "关键词直接通过"
-    
-    # 4. 检查中性签名并扣分
-    if cleaned_signature in validator.NEUTRAL_SIGNATURES:
-        # 将中性签名信息传递给内部验证函数
-        validator.neutral_signature_deduction = 50
-    
-    # 5. 检查链接并扣分
-    has_link, link_count = validator._contains_link(cleaned_content)
-    if has_link:
-        # 根据业务类型获取链接扣分规则
-        link_rules = validator.SCORE_RULES['DEDUCTIONS']['LINK']
-        if business_type in link_rules['business_specific']:
-            # 使用特定业务类型的规则
-            deduction = min(
-                link_rules['business_specific'][business_type]['score'] * link_count,
-                link_rules['business_specific'][business_type]['max_deduction']
-            )
-        else:
-            # 使用默认规则
-            deduction = min(
-                link_rules['score'] * link_count,
-                link_rules['max_deduction']
-            )
-        validator.link_deduction = deduction
-        validator.link_count = link_count
     
     # 6. 进行业务验证
     return validator._validate_business_internal(business_type, cleaned_content, cleaned_signature, account_type)

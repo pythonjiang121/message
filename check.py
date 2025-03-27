@@ -1,14 +1,32 @@
 from business import validate_business
-from typing import Tuple, Dict
-import pandas as pd
-import os
-from datetime import datetime
+from typing import Dict, List, Optional
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 import re
-from collections import Counter
+import uvicorn
+
+# 定义 Pydantic 模型
+class SMSRequest(BaseModel):
+    signature: str
+    content: str
+    business_type: str
+    account_type: str
+
+class SMSResponse(BaseModel):
+    passed: Optional[bool]
+    status: str  # '通过', '驳回', '待人工审核'
+    business_reason: str
+    score: Optional[float] = None
+
+class BatchSMSRequest(BaseModel):
+    sms_list: List[SMSRequest]
+
+class BatchSMSResponse(BaseModel):
+    results: List[SMSResponse]
+    statistics: Dict[str, int]
 
 class SMSChecker:
-
-    def check_sms(self, signature: str, content: str, business_type: str, account_type: str) -> Tuple[bool, Dict[str, str]]:
+    def check_sms(self, signature: str, content: str, business_type: str, account_type: str) -> SMSResponse:
         """
         审核单条短信
         
@@ -19,161 +37,111 @@ class SMSChecker:
             account_type: 客户类型
             
         Returns:
-            Tuple[bool, Dict]: (是否通过审核, 审核结果及原因)
+            SMSResponse: 审核结果响应对象
         """
-        results = {}
-
         # 业务类型审核（包含客户类型审核）
         business_passed, business_reason = validate_business(business_type, content, signature, account_type)
+        
+        # 初始化响应对象
+        response = SMSResponse(
+            passed=business_passed, 
+            status="通过" if business_passed else "驳回",
+            business_reason=business_reason,
+            score=None
+        )
         
         # 从审核结果中提取分数
         try:
             # 使用正则表达式提取分数
             score_match = re.search(r'总分: (\d+\.?\d*)', business_reason)
+            if not score_match:
+                score_match = re.search(r'最终得分: (\d+\.?\d*)', business_reason)
+                
             if score_match:
                 score = float(score_match.group(1))
-                # 60-80分需要人工审核
-                if 60 <= score < 90:
-                    business_passed = None  # 使用None表示需要人工审核
-                    business_reason = f"需人工审核 (总分: {score:.2f})"
+                response.score = score
+                
+                # 60-90分需要人工审核
+                if 0<= score < 10:
+                    response.passed = None  # 使用None表示需要人工审核
+                    response.status = "待人工审核"
+                    response.business_reason = f"需人工审核 (得分: {score:.2f})"
         except Exception as e:
             print(f"提取分数时出错: {str(e)}")
             
-        results['业务审核'] = business_reason
+        return response
 
-        return business_passed, results
+# 创建 FastAPI 应用
+app = FastAPI(
+    title="短信审核 API",
+    description="提供短信内容合规性审核的 RESTful API 服务",
+    version="1.0.0"
+)
 
-def process_excel(input_file: str) -> str:
+@app.get("/")
+async def root():
+    return {"message": "欢迎使用短信审核 API 服务"}
+
+@app.post("/api/v1/check", response_model=SMSResponse)
+async def check_single_sms(request: SMSRequest):
     """
-    处理Excel文件
+    审核单条短信内容
+    """
+    checker = SMSChecker()
+    result = checker.check_sms(
+        request.signature,
+        request.content,
+        request.business_type,
+        request.account_type
+    )
+    return result
+
+@app.post("/api/v1/batch-check", response_model=BatchSMSResponse)
+async def check_batch_sms(request: BatchSMSRequest):
+    """
+    批量审核多条短信内容
+    """
+    if len(request.sms_list) == 0:
+        raise HTTPException(status_code=400, detail="短信列表不能为空")
+        
+    checker = SMSChecker()
+    results = []
     
-    Args:
-        input_file: 输入文件路径
+    # 统计计数器
+    passed_count = 0
+    rejected_count = 0
+    manual_count = 0
+    
+    for sms in request.sms_list:
+        result = checker.check_sms(
+            sms.signature,
+            sms.content,
+            sms.business_type,
+            sms.account_type
+        )
         
-    Returns:
-        str: 输出文件路径
-    """
-    try:
-        # 检查是否安装了openpyxl
-        try:
-            import openpyxl
-        except ImportError:
-            print("正在安装必要的依赖 openpyxl...")
-            import subprocess
-            subprocess.check_call(["pip", "install", "openpyxl"])
-            print("openpyxl 安装完成")
-
-        # 读取Excel文件
-        df = pd.read_excel(input_file, engine='openpyxl')
-        required_columns = ['短信签名', '短信内容', '客户业务类型', '客户类型', '审核结果']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise ValueError(f"Excel文件缺少必需的列: {', '.join(missing_columns)}")
-        
-        # 初始化审核器
-        checker = SMSChecker()
-        
-        # 存储审核结果
-        results = []
-        code_pass_count = 0
-        code_manual_count = 0
-        code_reject_count = 0
-        
-        # 处理每一行
-        for _, row in df.iterrows():
-            passed, audit_results = checker.check_sms(
-                row['短信签名'],
-                row['短信内容'],
-                row['客户业务类型'],
-                row['客户类型']
-            )
+        # 统计结果
+        if result.passed is None:
+            manual_count += 1
+        elif result.passed:
+            passed_count += 1
+        else:
+            rejected_count += 1
             
-            if passed is None:
-                status = '待人工审核'
-                code_manual_count += 1
-            elif passed:
-                status = '通过'
-                code_pass_count += 1
-            else:
-                status = '驳回'
-                code_reject_count += 1
-                
-            results.append({
-                '总体审核结果': status,
-                '业务审核结果': audit_results['业务审核']
-            })
-        
-        # 将结果添加到DataFrame
-        for key in ['总体审核结果', '业务审核结果']:
-            df[key] = [result[key] for result in results]
-        
-        # 生成输出文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"审核结果_{timestamp}.xlsx"
-        
-        # 保存结果
-        df.to_excel(output_file, index=False, engine='openpyxl')
-        
-        # 计算统计信息
-        total_count = len(df)
-        
-        # 代码判断结果统计
-        print("\n=== 代码判断结果统计 ===")
-        print(f"判断总数: {total_count} 条")
-        print(f"通过数量: {code_pass_count} 条")
-        print(f"驳回数量: {code_reject_count} 条")
-        print(f"待人工审核数量: {code_manual_count} 条")
-        
-        # 人工审核结果统计
-        manual_pass_count = len(df[df['审核结果'] == '通过'])
-        manual_reject_count = len(df[df['审核结果'] == '驳回'])
-        print("\n=== 人工审核结果统计 ===")
-        print(f"通过数量: {manual_pass_count} 条")
-        print(f"驳回数量: {manual_reject_count} 条")
-        
-        # 匹配统计（排除待人工审核的数据）
-        df_for_matching = df[df['总体审核结果'] != '待人工审核']
-        matched_count = len(df_for_matching[df_for_matching['审核结果'] == df_for_matching['总体审核结果']])
-        match_rate = ((matched_count) / len(df_for_matching)) * 100 if len(df_for_matching) > 0 else 0
-        print("\n=== 匹配统计（不含待人工审核数据）===")
-        print(f"参与匹配计算数量: {len(df_for_matching)} 条")
-        print(f"匹配数量: {matched_count} 条")
-        print(f"匹配率: {match_rate:.2f}%")
+        results.append(result)
+    
+    # 返回批量结果和统计数据
+    return BatchSMSResponse(
+        results=results,
+        statistics={
+            "total": len(results),
+            "passed": passed_count,
+            "rejected": rejected_count,
+            "manual_review": manual_count
+        }
+    )
 
-
-            # 统计不匹配情况
-        code_pass_manual_reject = len(df[(df['总体审核结果'] == '通过') & (df['审核结果'] == '驳回')])
-        code_reject_manual_pass = len(df[(df['总体审核结果'] == '驳回') & (df['审核结果'] == '通过')])
-
-        print("\n=== 不匹配情况分析 ===")
-        print(f"代码通过但人工驳回数量: {code_pass_manual_reject} 条")
-        print(f"代码驳回但人工通过数量: {code_reject_manual_pass} 条")
-
-        return output_file
-        
-    except Exception as e:
-        print(f"处理文件时出错: {str(e)}")
-        raise
-
-def main():
-    """主函数"""
-    try:
-        # 获取输入文件
-        import sys
-        input_file = sys.argv[1] if len(sys.argv) > 1 else "合并审核.xlsx"
-        
-        if not os.path.exists(input_file):
-            print(f"错误: 输入文件 '{input_file}' 不存在")
-            sys.exit(1)
-            
-        # 处理文件
-        output_file = process_excel(input_file)
-        print(f"审核完成，结果已保存到: {output_file}")
-        
-    except Exception as e:
-        print(f"程序运行出错: {str(e)}")
-        sys.exit(1)
-
+# 如果直接运行该文件，启动 API 服务器
 if __name__ == "__main__":
-    main()
+    uvicorn.run("check:app", host="0.0.0.0", port=8000, reload=True)
     
