@@ -1,0 +1,18 @@
+2025-03-28 17:39:01,165 - ERROR - 处理数据库时出错: Execution failed on sql '
+            SELECT 
+                content as '短信内容',
+                customer_id as '客户业务类型'
+            FROM sms_records
+            LIMIT ? OFFSET ?
+            ': no such column: customer_id
+2025-03-28 17:39:01,166 - ERROR - 程序运行出错: Execution failed on sql '
+            SELECT 
+                content as '短信内容',
+                customer_id as '客户业务类型'
+            FROM sms_records
+            LIMIT ? OFFSET ?
+            ': no such column: customer_id
+2025-03-28 17:52:28,523 - ERROR - 处理数据库时出错: table audit_results has no column named customer_name
+2025-03-28 17:52:28,524 - ERROR - 程序运行出错: table audit_results has no column named customer_name
+2025-03-28 17:56:05,041 - ERROR - 处理数据库时出错: This sheet is too large! Your sheet size is: 1055021, 6 Max sheet size is: 1048576, 16384
+2025-03-28 17:56:05,042 - ERROR - 程序运行出错: This sheet is too large! Your sheet size is: 1055021, 6 Max sheet size is: 1048576, 16384

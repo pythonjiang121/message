@@ -32,10 +32,8 @@ class SMSChecker:
             score_match = re.search(r'总分: (\d+\.?\d*)', business_reason)
             if score_match:
                 score = float(score_match.group(1))
-                # 60-80分需要人工审核
-                if 0 <= score < 0:
-                    business_passed = None  # 使用None表示需要人工审核
-                    business_reason = f"需人工审核 (总分: {score:.2f})"
+                
+                
         except Exception as e:
             print(f"提取分数时出错: {str(e)}")
             
@@ -76,7 +74,6 @@ def process_excel(input_file: str) -> str:
         # 存储审核结果
         results = []
         code_pass_count = 0
-        code_manual_count = 0
         code_reject_count = 0
         
         # 处理每一行
@@ -88,10 +85,7 @@ def process_excel(input_file: str) -> str:
                 row['客户类型']
             )
             
-            if passed is None:
-                status = '待人工审核'
-                code_manual_count += 1
-            elif passed:
+            if passed:
                 status = '通过'
                 code_pass_count += 1
             else:
@@ -122,19 +116,17 @@ def process_excel(input_file: str) -> str:
         print(f"判断总数: {total_count} 条")
         print(f"通过数量: {code_pass_count} 条")
         print(f"驳回数量: {code_reject_count} 条")
-        print(f"待人工审核数量: {code_manual_count} 条")
-        
-        # 人工审核结果统计
-        manual_pass_count = len(df[df['审核结果'] == '通过'])
-        manual_reject_count = len(df[df['审核结果'] == '驳回'])
-        print("\n=== 人工审核结果统计 ===")
-        print(f"通过数量: {manual_pass_count} 条")
-        print(f"驳回数量: {manual_reject_count} 条")
+        rejection_rate = (code_reject_count / total_count) * 100 if total_count > 0 else 0
+        print(f"代码驳回率: {rejection_rate:.2f}%")
         
         # 匹配统计（排除待人工审核的数据）
         df_for_matching = df[df['总体审核结果'] != '待人工审核']
-        matched_count = len(df_for_matching[df_for_matching['审核结果'] == df_for_matching['总体审核结果']])
-        match_rate = ((matched_count) / len(df_for_matching)) * 100 if len(df_for_matching) > 0 else 0
+        # 只统计代码和人工结果都为通过或驳回的情况
+        matched_count = len(df_for_matching[
+            ((df_for_matching['总体审核结果'] == '通过') & (df_for_matching['审核结果'] == '通过')) |
+            ((df_for_matching['总体审核结果'] == '驳回') & (df_for_matching['审核结果'] == '驳回'))
+        ])
+        match_rate = (matched_count / len(df_for_matching)) * 100 if len(df_for_matching) > 0 else 0
         print("\n=== 匹配统计（不含待人工审核数据）===")
         print(f"参与匹配计算数量: {len(df_for_matching)} 条")
         print(f"匹配数量: {matched_count} 条")

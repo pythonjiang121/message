@@ -14,7 +14,7 @@ class SMSRequest(BaseModel):
 
 class SMSResponse(BaseModel):
     passed: Optional[bool]
-    status: str  # '通过', '驳回', '待人工审核'
+    status: str  # '通过', '驳回'
     business_reason: str
     score: Optional[float] = None
 
@@ -61,11 +61,6 @@ class SMSChecker:
                 score = float(score_match.group(1))
                 response.score = score
                 
-                # 60-90分需要人工审核
-                if 0<= score < 10:
-                    response.passed = None  # 使用None表示需要人工审核
-                    response.status = "待人工审核"
-                    response.business_reason = f"需人工审核 (得分: {score:.2f})"
         except Exception as e:
             print(f"提取分数时出错: {str(e)}")
             
@@ -83,7 +78,7 @@ async def root():
     return {"message": "欢迎使用短信审核 API 服务"}
 
 @app.post("/api/v1/check", response_model=SMSResponse)
-async def check_single_sms(request: SMSRequest):
+async def checkAPI_single_sms(request: SMSRequest):
     """
     审核单条短信内容
     """
@@ -143,5 +138,5 @@ async def check_batch_sms(request: BatchSMSRequest):
 
 # 如果直接运行该文件，启动 API 服务器
 if __name__ == "__main__":
-    uvicorn.run("check:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("checkAPI:app", host="0.0.0.0", port=8000, reload=True)
     
