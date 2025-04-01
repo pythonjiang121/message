@@ -1,6 +1,7 @@
 import re  
 import cpca
 import pandas as pd
+import math
 from typing import Tuple, Dict, List, Set
 import json
 import jieba.posseg as pseg
@@ -595,70 +596,117 @@ class BusinessValidator:
         # 检查固定电话
         has_fixed_phone, fixed_phone_count = self._contains_fixed_phone(cleaned_content)
         if has_fixed_phone:
-            deduction = min(
-                self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['行业-通知']['score'] * fixed_phone_count,
-                self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['行业-通知']['max_deduction']
-            )
+            # 检查是否与其他规则共现
+            other_rules_present = False
+            
+            # 检查是否与积分营销共现
+            points_marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['keywords'] if keyword in cleaned_content)
+            if points_marketing_matches > 0:
+                other_rules_present = True
+                
+            # 检查是否与平台关键词共现
+            platform_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['keywords'] if keyword in cleaned_content)
+            if platform_matches > 0:
+                other_rules_present = True
+                
+            # 检查是否与强营销关键词共现
+            strong_marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['strong_keywords'] if keyword in cleaned_content)
+            if strong_marketing_matches > 0:
+                other_rules_present = True
+            
+            if business_type == "行业-通知" and other_rules_present:
+                # 如果是行业-通知类型且与其他规则共现，降低扣分权重
+                deduction = min(
+                    -25 * fixed_phone_count,  # 从-35降低到-25
+                    -50  # 最大扣分从-70降低到-50
+                )
+            elif business_type == "行业-通知":
+                # 如果是行业-通知类型但没有与其他规则共现，适度降低扣分
+                deduction = min(
+                    -30 * fixed_phone_count,  # 从-35降低到-30
+                    -60  # 最大扣分从-70降低到-60
+                )
+            else:
+                # 其他业务类型保持原有扣分逻辑
+                deduction = min(
+                    self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['行业-通知']['score'] * fixed_phone_count,
+                    self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['行业-通知']['max_deduction']
+                )
             deductions.append(deduction)
             deduction_details.append(f"固定电话扣分: {deduction} (数量: {fixed_phone_count})")
-
+            
         # 检测链接    
         has_link, link_count = self._contains_link(cleaned_content)
         if has_link:
-            deduction = min(
-                self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['行业-通知']['score'] * link_count,
-                self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['行业-通知']['max_deduction']
-            )
+            if business_type == "行业-通知":
+                # 增加链接扣分力度
+                deduction = min(
+                    -25 * link_count,  # 从-20增加到-25
+                    -50  # 最大扣分从-40增加到-50
+                )
+            else:
+                deduction = min(
+                    self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['行业-通知']['score'] * link_count,
+                    self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['行业-通知']['max_deduction']
+                )
             deductions.append(deduction)
             deduction_details.append(f"链接扣分: {deduction} (数量: {link_count})")
 
         # 检查营销关键词
         marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['keywords'] if keyword in cleaned_content)
-        if marketing_matches > 0:
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific']['行业-通知']['score'] * marketing_matches,
-                self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific']['行业-通知']['max_deduction']
-            )
+        if marketing_matches > 0 and business_type == "行业-通知":
+            # 针对行业-通知类型降低营销关键词扣分
+            deduction = -10 * marketing_matches  # 从-15降低到-10
+            deduction = max(deduction, -20)  # 最大扣分限制从-30降低到-20
+            deductions.append(deduction)
+            deduction_details.append(f"营销关键词扣分: {deduction} (匹配数量: {marketing_matches})")
+        elif marketing_matches > 0:
+            deduction = self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific']['行业-通知']['score'] * marketing_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific']['行业-通知']['max_deduction'])
             deductions.append(deduction)
             deduction_details.append(f"营销关键词扣分: {deduction} (匹配数量: {marketing_matches})")
             
         # 检查强营销关键词
         strong_marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['strong_keywords'] if keyword in cleaned_content)
-        if strong_marketing_matches > 0:
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific']['行业-通知']['strong_score'] * strong_marketing_matches,
-                self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific']['行业-通知']['max_deduction']
-            )
+        if strong_marketing_matches > 0 and business_type == "行业-通知":
+            # 针对行业-通知类型增加强营销关键词扣分
+            deduction = -15 * strong_marketing_matches  # 从-10增加到-15
+            deduction = max(deduction, -30)  # 最大扣分限制从-20增加到-30
+            deductions.append(deduction)
+            deduction_details.append(f"强营销关键词扣分: {deduction} (匹配数量: {strong_marketing_matches})")
+        elif strong_marketing_matches > 0:
+            deduction = self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific']['行业-通知']['strong_score'] * strong_marketing_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific']['行业-通知']['max_deduction'])
             deductions.append(deduction)
             deduction_details.append(f"强营销关键词扣分: {deduction} (匹配数量: {strong_marketing_matches})")
             
         # 检查积分营销关键词
         points_marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['keywords'] if keyword in cleaned_content)
-        if points_marketing_matches > 0:
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['business_specific']['行业-通知']['score'] * points_marketing_matches,
-                self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['business_specific']['行业-通知']['max_deduction']
-            )
+        if points_marketing_matches > 0 and business_type == "行业-通知":
+            # 针对行业-通知类型增加积分营销扣分
+            deduction = -15 * points_marketing_matches  # 从-10增加到-15
+            deduction = max(deduction, -30)  # 最大扣分限制从-20增加到-30
+            deductions.append(deduction)
+            deduction_details.append(f"积分营销扣分: {deduction} (匹配数量: {points_marketing_matches})")
+        elif points_marketing_matches > 0:
+            deduction = self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['business_specific']['行业-通知']['score'] * points_marketing_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['business_specific']['行业-通知']['max_deduction'])
             deductions.append(deduction)
             deduction_details.append(f"积分营销扣分: {deduction} (匹配数量: {points_marketing_matches})")
             
         # 检查积分到期关键词
         points_expiry_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['keywords'] if keyword in cleaned_content)
         if points_expiry_matches > 0:
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['business_specific']['行业-通知']['score'] * points_expiry_matches,
-                self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['business_specific']['行业-通知']['max_deduction']
-            )
+            deduction = self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['business_specific']['行业-通知']['score'] * points_expiry_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['business_specific']['行业-通知']['max_deduction'])
             deductions.append(deduction)
             deduction_details.append(f"积分到期扣分: {deduction} (匹配数量: {points_expiry_matches})")
         
         # 检查平台关键词
         platform_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['keywords'] if keyword in cleaned_content)
         if platform_matches > 0:
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['business_specific']['行业-通知']['score'] * platform_matches,
-                self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['business_specific']['行业-通知']['max_deduction']
-            )
+            deduction = self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['business_specific']['行业-通知']['score'] * platform_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['business_specific']['行业-通知']['max_deduction'])
             deductions.append(deduction)
             deduction_details.append(f"平台关键词扣分: {deduction} (匹配数量: {platform_matches})")
         
@@ -762,14 +810,6 @@ class BusinessValidator:
                 deductions.append(deduction)
                 address_info = ", ".join(detected_addresses) if detected_addresses else f"地址特征分数: {address_score}"
                 deduction_details.append(f"地址扣分: {deduction} ({address_info})")
-
-            # 检查服务通知关键词（加分项）
-            service_keywords = {'服务通知', '到期提醒', '账单提醒', '缴费提醒', '温馨提示', '提醒您', '安全提示'}
-            service_matches = sum(1 for keyword in service_keywords if keyword in cleaned_content)
-            if service_matches > 0:
-                bonus = 5 * service_matches
-                deductions.append(bonus)  # 加分项
-                deduction_details.append(f"服务通知关键词加分: +{bonus} (匹配数量: {service_matches})")
         
         elif business_type == "行业-物流":
             # 检查物流关键词并应用加分规则
@@ -790,18 +830,7 @@ class BusinessValidator:
                 deduction = -30
                 deductions.append(deduction)
                 deduction_details.append("缺少物流关键词扣分: -30")
-        
-        # 应用规则共现减免
-        if has_fixed_phone and (has_link or platform_matches > 0):
-            # 固定电话与链接或平台关键词共现时，应用减免系数
-            reduction_factor = 0.75  # 减轻25%扣分
-            # 找出固定电话扣分在列表中的位置
-            phone_index = 0  # 通常是第一个，因为在上面代码中是第一个处理的
-            if deductions[phone_index] < 0:  # 确保是扣分项
-                original_deduction = deductions[phone_index]
-                deductions[phone_index] = original_deduction * reduction_factor
-                deduction_details[phone_index] += f" (与其他规则共现减免: {int((1-reduction_factor)*100)}%)"
-        
+                
         # 应用非线性扣分计算
         # 区分正向加分和负向扣分
         positive_deductions = [d for d in deductions if d > 0]
@@ -809,7 +838,7 @@ class BusinessValidator:
         
         # 非线性参数
         nonlinear_params = {
-            '行业-通知': {'factor': 35, 'max_total_deduction': -65},
+            '行业-通知': {'factor': 30, 'max_total_deduction': -70},  # 从-65增加到-70
             '行业-物流': {'factor': 30, 'max_total_deduction': -60},
         }
         
@@ -891,51 +920,59 @@ class BusinessValidator:
 
         # 检查营销关键词
         marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['keywords'] if keyword in cleaned_content)
-        if marketing_matches > 0:
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['MARKETING']['score'] * marketing_matches,
-                self.SCORE_RULES['DEDUCTIONS']['MARKETING']['max_deduction']
-            )
+        if marketing_matches > 0 and business_type == "会销-普通":
+            # 针对会销-普通类型增加营销关键词扣分
+            deduction = -8 * marketing_matches  # 从-5增加到-8
+            deduction = max(deduction, -15)  # 最大扣分从-10增加到-15
+            deductions.append(deduction)
+            deduction_details.append(f"营销关键词扣分: {deduction} (匹配数量: {marketing_matches})")
+        elif marketing_matches > 0:
+            deduction = self.SCORE_RULES['DEDUCTIONS']['MARKETING']['score'] * marketing_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['MARKETING']['max_deduction'])
             deductions.append(deduction)
             deduction_details.append(f"营销关键词扣分: {deduction} (匹配数量: {marketing_matches})")
             
         # 检查强营销关键词
         strong_marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['strong_keywords'] if keyword in cleaned_content)
-        if strong_marketing_matches > 0:
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['MARKETING']['strong_score'] * strong_marketing_matches,
-                self.SCORE_RULES['DEDUCTIONS']['MARKETING']['max_deduction']
-            )
+        if strong_marketing_matches > 0 and business_type == "会销-普通":
+            # 针对会销-普通类型增加强营销关键词扣分
+            deduction = -8 * strong_marketing_matches  # 从-5增加到-8
+            deduction = max(deduction, -15)  # 最大扣分从-10增加到-15
+            deductions.append(deduction)
+            deduction_details.append(f"强营销关键词扣分: {deduction} (匹配数量: {strong_marketing_matches})")
+        elif strong_marketing_matches > 0:
+            deduction = self.SCORE_RULES['DEDUCTIONS']['MARKETING']['strong_score'] * strong_marketing_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['MARKETING']['max_deduction'])
             deductions.append(deduction)
             deduction_details.append(f"强营销关键词扣分: {deduction} (匹配数量: {strong_marketing_matches})")
             
         # 检查积分营销关键词
         points_marketing_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['keywords'] if keyword in cleaned_content)
-        if points_marketing_matches > 0:
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['score'] * points_marketing_matches,
-                self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['max_deduction']
-            )
+        if points_marketing_matches > 0 and business_type == "会销-普通":
+            # 针对会销-普通类型增加积分营销扣分
+            deduction = -8 * points_marketing_matches  # 从-5增加到-8
+            deduction = max(deduction, -15)  # 最大扣分从-10增加到-15
+            deductions.append(deduction)
+            deduction_details.append(f"积分营销扣分: {deduction} (匹配数量: {points_marketing_matches})")
+        elif points_marketing_matches > 0:
+            deduction = self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['score'] * points_marketing_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['POINTS_MARKETING']['max_deduction'])
             deductions.append(deduction)
             deduction_details.append(f"积分营销扣分: {deduction} (匹配数量: {points_marketing_matches})")
             
         # 检查积分到期关键词
         points_expiry_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['keywords'] if keyword in cleaned_content)
         if points_expiry_matches > 0:
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['score'] * points_expiry_matches,
-                self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['max_deduction']
-            )
+            deduction = self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['score'] * points_expiry_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['POINTS_EXPIRY']['max_deduction'])
             deductions.append(deduction)
             deduction_details.append(f"积分到期扣分: {deduction} (匹配数量: {points_expiry_matches})")
         
         # 检查平台关键词
         platform_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['keywords'] if keyword in cleaned_content)
         if platform_matches > 0:
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['score'] * platform_matches,
-                self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['max_deduction']
-            )
+            deduction = self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['score'] * platform_matches
+            deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['PLATFORM']['max_deduction'])
             deductions.append(deduction)
             deduction_details.append(f"平台关键词扣分: {deduction} (匹配数量: {platform_matches})")
         
@@ -986,7 +1023,7 @@ class BusinessValidator:
             reduction_factor = 0.7  # 减轻30%扣分
             # 找出固定电话扣分在列表中的位置
             phone_index = 0  # 通常是第一个，因为在上面代码中是第一个处理的
-            if deductions[phone_index] < 0:  # 确保是扣分项
+            if len(deductions) > phone_index and deductions[phone_index] < 0:  # 确保是扣分项且存在
                 original_deduction = deductions[phone_index]
                 deductions[phone_index] = original_deduction * reduction_factor
                 deduction_details[phone_index] += f" (与其他规则共现减免: {int((1-reduction_factor)*100)}%)"
@@ -1047,17 +1084,16 @@ class BusinessValidator:
         """
         # 基础分数
         base_score = self.SCORE_RULES['BASE_SCORE']['拉新']['拉新-催收']
-        
-        # 收集扣分项而非直接累加
-        deductions = []
-        deduction_details = []
+        final_score = base_score
         
         # 检查私人号码
         if self._contains_private_number(cleaned_content):
+            final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "催收类短信不允许包含私人号码"
 
         # 检查私人姓名
         if self._find_chinese_names(cleaned_content):
+            final_score += self.SCORE_RULES['ZERO_TOLERANCE']['PRIVATE_NUMBER']
             return False, "催收类短信不允许包含私人姓名"
 
         # 检查固定电话
@@ -1067,65 +1103,16 @@ class BusinessValidator:
                 self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['拉新-催收']['score'] * fixed_phone_count,
                 self.SCORE_RULES['DEDUCTIONS']['FIXED_PHONE']['business_specific']['拉新-催收']['max_deduction']
             )
-            deductions.append(deduction)
-            deduction_details.append(f"固定电话扣分: {deduction} (数量: {fixed_phone_count})")
+            final_score += deduction
+            self.score_details['deductions'].append(f"固定电话扣分: {deduction} (数量: {fixed_phone_count})")
 
-        # 检查链接
         has_link, link_count = self._contains_link(cleaned_content)
         if has_link:
             deduction = min(
                 self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['拉新-催收']['score'] * link_count,
                 self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific']['拉新-催收']['max_deduction']
             )
-            deductions.append(deduction)
-            deduction_details.append(f"链接扣分: {deduction} (数量: {link_count})")
-            
-        # 检查服务通知关键词（加分项）
-        service_keywords = {'通知', '提醒', '逾期', '未还', '还款', '履约', '还贷'}
-        service_matches = sum(1 for keyword in service_keywords if keyword in cleaned_content)
-        if service_matches > 0:
-            bonus = 3 * service_matches
-            deductions.append(bonus)  # 加分项
-            deduction_details.append(f"催收服务关键词加分: +{bonus} (匹配数量: {service_matches})")
-            
-        # 应用规则共现减免
-        if has_fixed_phone and has_link:
-            # 固定电话与链接共现时，应用减免系数
-            reduction_factor = 0.8  # 减轻20%扣分
-            # 找出固定电话扣分在列表中的位置
-            phone_index = 0  # 通常是第一个，因为在上面代码中是第一个处理的
-            if deductions[phone_index] < 0:  # 确保是扣分项
-                original_deduction = deductions[phone_index]
-                deductions[phone_index] = original_deduction * reduction_factor
-                deduction_details[phone_index] += f" (与链接共现减免: {int((1-reduction_factor)*100)}%)"
-        
-        # 应用非线性扣分计算
-        # 区分正向加分和负向扣分
-        positive_deductions = [d for d in deductions if d > 0]
-        negative_deductions = [d for d in deductions if d < 0]
-        
-        # 非线性参数 - 催收类短信应该使用更严格的参数
-        params = {'factor': 25, 'max_total_deduction': -55}
-        
-        # 对负向扣分应用非线性计算
-        if negative_deductions:
-            nonlinear_deduction = self._apply_nonlinear_deduction(
-                negative_deductions, 
-                factor=params['factor'],
-                max_total_deduction=params['max_total_deduction']
-            )
-        else:
-            nonlinear_deduction = 0
-            
-        # 计算最终分数 = 基础分 + 非线性扣分 + 正向加分
-        total_positive = sum(positive_deductions)
-        final_score = base_score + nonlinear_deduction + total_positive
-        
-        # 更新评分详情
-        self.score_details['deductions'] = deduction_details
-        self.score_details['nonlinear_deduction'] = nonlinear_deduction
-        self.score_details['final_score'] = final_score
-        self.score_details['base_score'] = base_score
+            final_score += deduction
         
         # 判断是否通过
         passed = final_score >= self.SCORE_RULES['PASS_SCORE']['拉新']['拉新-催收']
@@ -1283,26 +1270,31 @@ class BusinessValidator:
 
     def _apply_nonlinear_deduction(self, deductions: List[float], factor: float = 30, max_total_deduction: float = -60) -> float:
         """
-        应用非线性扣分计算公式，避免多规则触发时过度扣分
+        应用非线性扣分计算，使用对数函数减轻多个规则同时触发时的惩罚
         
         Args:
-            deductions: 各规则触发的原始扣分列表
-            factor: 调节系数，控制曲线陡峭程度
-            max_total_deduction: 最大总扣分上限
+            deductions: 负值扣分列表
+            factor: 非线性因子，控制曲线陡峭程度
+            max_total_deduction: 最大总扣分限制
             
         Returns:
             float: 非线性计算后的总扣分
         """
-        import math
+        if not deductions:
+            return 0
+            
+        # 计算线性扣分总和
+        linear_sum = sum(deductions)
         
-        # 所有扣分累加值（取绝对值计算）
-        sum_deduction = sum(abs(d) for d in deductions)
+        # 确保线性扣分总和为负值
+        if linear_sum >= 0:
+            return linear_sum
+            
+        # 应用非线性函数: factor * ln(1 + |linear_sum|/factor)
+        nonlinear_deduction = -factor * math.log(1 + abs(linear_sum) / factor)
         
-        # 应用非线性公式: max_deduction * (1 - exp(-sum_deduction/factor))
-        # 转换为负值输出
-        nonlinear_deduction = max_total_deduction * (1 - math.exp(-sum_deduction/factor))
-        
-        return nonlinear_deduction
+        # 应用最大扣分限制
+        return max(nonlinear_deduction, max_total_deduction)
 
 # 定义有效的客户类型
 客户类型 = ["云平台", "直客", "类直客", "渠道"]
