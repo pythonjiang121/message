@@ -3,3 +3,5 @@ __pycache__/
 *.xlsx
 ~
 .DS_Store
+sms_data.db
+无标题.csv
