@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# 虚拟环境
+.venv
+venv
+env
+
+# Python缓存
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache
+
+# 备份目录
+backup_*/
+
+# 数据文件 (通过volumes挂载)
+*.db
+*.csv
+*.xlsx
+
+# 日志
+logs/
+
+# IDE配置
+.vscode/
+.idea/
+
+# 其他
+.DS_Store 

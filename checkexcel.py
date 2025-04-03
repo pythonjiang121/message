@@ -15,18 +15,18 @@ class SMSChecker:
         Args:
             signature: 短信签名
             content: 短信内容
-            business_type: 业务类型
-            account_type: 客户类型
+            business_type: 产品类型
+            account_type: 账户类型
             
         Returns:
-            Tuple[bool, Dict]: (是否通过审核, 审核结果及原因)
+            Tuple[bool, Dict]: (是否放行审核, 操作类型及原因)
         """
         results = {}
 
-        # 业务类型审核（包含客户类型审核）
+        # 产品类型审核（包含账户类型审核）
         business_passed, business_reason = validate_business(business_type, content, signature, account_type)
         
-        # 从审核结果中提取分数
+        # 从操作类型中提取分数
         try:
             # 使用正则表达式提取分数
             score_match = re.search(r'总分: (\d+\.?\d*)', business_reason)
@@ -63,7 +63,7 @@ def process_excel(input_file: str) -> str:
 
         # 读取Excel文件
         df = pd.read_excel(input_file, engine='openpyxl')
-        required_columns = ['短信签名', '短信内容', '客户业务类型', '客户类型', '审核结果']
+        required_columns = ['短信签名', '短信内容', '产品类型', '账户类型', '操作类型']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             raise ValueError(f"Excel文件缺少必需的列: {', '.join(missing_columns)}")
@@ -71,39 +71,46 @@ def process_excel(input_file: str) -> str:
         # 初始化审核器
         checker = SMSChecker()
         
-        # 存储审核结果
+        # 存储操作类型
         results = []
         code_pass_count = 0
         code_reject_count = 0
         
         # 处理每一行
-        for _, row in df.iterrows():
-            passed, audit_results = checker.check_sms(
-                row['短信签名'],
-                row['短信内容'],
-                row['客户业务类型'],
-                row['客户类型']
-            )
-            
-            if passed:
-                status = '通过'
-                code_pass_count += 1
-            else:
-                status = '驳回'
-                code_reject_count += 1
+        for index, row in df.iterrows():
+            try:
+                passed, audit_results = checker.check_sms(
+                    row['短信签名'],
+                    row['短信内容'],
+                    row['产品类型'],
+                    row['账户类型']
+                )
                 
-            results.append({
-                '总体审核结果': status,
-                '业务审核结果': audit_results['业务审核']
-            })
+                if passed:
+                    status = '放行'
+                    code_pass_count += 1
+                else:
+                    status = '失败'
+                    code_reject_count += 1
+                    
+                results.append({
+                    '总体操作类型': status,
+                    '业务操作类型': audit_results['业务审核']
+                })
+            except Exception as e:
+                # 将发生错误的行添加到结果中，标记为处理错误
+                results.append({
+                    '总体操作类型': '处理错误',
+                    '业务操作类型': f'处理错误: {str(e)}'
+                })
         
         # 将结果添加到DataFrame
-        for key in ['总体审核结果', '业务审核结果']:
+        for key in ['总体操作类型', '业务操作类型']:
             df[key] = [result[key] for result in results]
         
         # 生成输出文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"审核结果_{timestamp}.xlsx"
+        output_file = f"操作类型_{timestamp}.xlsx"
         
         # 保存结果
         df.to_excel(output_file, index=False, engine='openpyxl')
@@ -114,17 +121,21 @@ def process_excel(input_file: str) -> str:
         # 代码判断结果统计
         print("\n=== 代码判断结果统计 ===")
         print(f"判断总数: {total_count} 条")
-        print(f"通过数量: {code_pass_count} 条")
-        print(f"驳回数量: {code_reject_count} 条")
+        print(f"放行数量: {code_pass_count} 条")
+        print(f"失败数量: {code_reject_count} 条")
+        # 计算错误数量
+        error_count = total_count - code_pass_count - code_reject_count
+        if error_count > 0:
+            print(f"处理错误数量: {error_count} 条")
         rejection_rate = (code_reject_count / total_count) * 100 if total_count > 0 else 0
-        print(f"代码驳回率: {rejection_rate:.2f}%")
+        print(f"代码失败率: {rejection_rate:.2f}%")
         
         # 匹配统计（排除待人工审核的数据）
-        df_for_matching = df[df['总体审核结果'] != '待人工审核']
-        # 只统计代码和人工结果都为通过或驳回的情况
+        df_for_matching = df[df['总体操作类型'] != '待人工审核']
+        # 只统计代码和人工结果都为放行或失败的情况
         matched_count = len(df_for_matching[
-            ((df_for_matching['总体审核结果'] == '通过') & (df_for_matching['审核结果'] == '通过')) |
-            ((df_for_matching['总体审核结果'] == '驳回') & (df_for_matching['审核结果'] == '驳回'))
+            ((df_for_matching['总体操作类型'] == '放行') & (df_for_matching['操作类型'] == '放行')) |
+            ((df_for_matching['总体操作类型'] == '失败') & (df_for_matching['操作类型'] == '失败'))
         ])
         match_rate = (matched_count / len(df_for_matching)) * 100 if len(df_for_matching) > 0 else 0
         print("\n=== 匹配统计（不含待人工审核数据）===")
@@ -132,19 +143,20 @@ def process_excel(input_file: str) -> str:
         print(f"匹配数量: {matched_count} 条")
         print(f"匹配率: {match_rate:.2f}%")
 
-
-            # 统计不匹配情况
-        code_pass_manual_reject = len(df[(df['总体审核结果'] == '通过') & (df['审核结果'] == '驳回')])
-        code_reject_manual_pass = len(df[(df['总体审核结果'] == '驳回') & (df['审核结果'] == '通过')])
+        # 统计不匹配情况
+        code_pass_manual_reject = len(df[(df['总体操作类型'] == '放行') & (df['操作类型'] == '失败')])
+        code_reject_manual_pass = len(df[(df['总体操作类型'] == '失败') & (df['操作类型'] == '放行')])
 
         print("\n=== 不匹配情况分析 ===")
-        print(f"代码通过但人工驳回数量: {code_pass_manual_reject} 条")
-        print(f"代码驳回但人工通过数量: {code_reject_manual_pass} 条")
+        print(f"代码放行但人工失败数量: {code_pass_manual_reject} 条")
+        print(f"代码失败但人工放行数量: {code_reject_manual_pass} 条")
 
         return output_file
         
     except Exception as e:
+        import traceback
         print(f"处理文件时出错: {str(e)}")
+        print(f"错误详情:\n{traceback.format_exc()}")
         raise
 
 def main():
@@ -152,7 +164,7 @@ def main():
     try:
         # 获取输入文件
         import sys
-        input_file = sys.argv[1] if len(sys.argv) > 1 else "合并审核.xlsx"
+        input_file = sys.argv[1] if len(sys.argv) > 1 else "3月审核记录.xlsx"
         
         if not os.path.exists(input_file):
             print(f"错误: 输入文件 '{input_file}' 不存在")

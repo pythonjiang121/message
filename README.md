@@ -124,3 +124,95 @@ pip install pandas openpyxl
 ---
 
 希望这个 `README.md` 文件能帮助用户快速了解和使用您的项目！如果有其他需求，请随时告诉我。
+
+## Docker部署
+
+本项目支持使用Docker进行部署，提供更一致的运行环境和简化的部署流程。
+
+### 前置要求
+
+- 安装Docker和Docker Compose
+  - Docker: https://docs.docker.com/get-docker/
+  - Docker Compose: https://docs.docker.com/compose/install/
+
+### 快速部署
+
+使用提供的部署脚本：
+
+```bash
+# 赋予脚本执行权限（仅首次需要）
+chmod +x docker-deploy.sh
+
+# 构建并启动服务
+./docker-deploy.sh --build
+
+# 查看服务日志
+./docker-deploy.sh --logs
+```
+
+### 运行模式
+
+系统支持多种运行模式，可以根据需要选择：
+
+1. **标准处理模式** - 处理短信文件
+   ```bash
+   ./docker-deploy.sh
+   ```
+
+2. **API服务模式** - 启动API服务，用于接口调用
+   ```bash
+   ./docker-deploy.sh --api
+   
+   # 查看API服务日志
+   ./docker-deploy.sh --logs api
+   ```
+
+3. **检查模式** - 运行Excel文件检查
+   ```bash
+   ./docker-deploy.sh --check
+   ```
+
+### 常用命令
+
+```bash
+# 重启服务
+./docker-deploy.sh --restart
+
+# 停止服务
+./docker-deploy.sh --stop
+```
+
+### 手动操作Docker
+
+如果需要手动管理Docker容器：
+
+```bash
+# 构建镜像
+docker-compose build
+
+# 启动标准服务
+docker-compose up -d
+
+# 启动API服务
+docker-compose --profile api up -d
+
+# 运行检查服务
+docker-compose --profile check up
+
+# 停止所有服务
+docker-compose down
+
+# 查看日志
+docker-compose logs -f sms-audit
+```
+
+### 文件挂载
+
+Docker配置已设置以下挂载点：
+
+- `./data`: 应用数据目录
+- `./logs`: 日志输出目录
+- `./sms_data.db`: 数据库文件
+- `./无标题.csv`: 输入数据文件
+
+这些文件会从宿主机挂载到容器内，确保数据持久化。

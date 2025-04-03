@@ -11,14 +11,14 @@ def analyze_deduction_rules():
     plt.rcParams['axes.unicode_minus'] = False    # 用来正常显示负号
     
     # 读取Excel文件
-    df = pd.read_excel('合并审核.xlsx')
+    df = pd.read_excel('3月审核记录.xlsx')
     print(f"总共读取 {len(df)} 条消息")
     
     # 初始化计数器
     mismatch_counts = defaultdict(int)  # 扣分规则计数器
     mismatch_scores = defaultdict(float)  # 扣分规则实际扣分计数器
-    system_results = []  # 存储系统审核结果
-    mismatches = 0  # 不一致的审核结果数量
+    system_results = []  # 存储系统操作类型
+    mismatches = 0  # 不一致的操作类型数量
     
     # 计算私人号码统计
     private_number_count = 0
@@ -31,17 +31,17 @@ def analyze_deduction_rules():
     for i, row in df.iterrows():
         content = row['短信内容']
         signature = row['短信签名']
-        business_type = row['客户业务类型']
-        customer_type = row['客户类型']
-        manual_result = row['审核结果']
+        business_type = row['产品类型']
+        customer_type = row['账户类型']
+        manual_result = row['操作类型']
         
         # 清理内容和签名
         cleaned_content = validator._clean_content(content)
         cleaned_signature = validator._clean_content(signature)
         
-        # 使用validator生成系统审核结果
+        # 使用validator生成系统操作类型
         is_valid, _ = validator._validate_business_internal(business_type, cleaned_content, cleaned_signature, customer_type)
-        system_result = '通过' if is_valid else '驳回'
+        system_result = '放行' if is_valid else '失败'
         system_results.append(system_result)
         
         # 检查是否含有私人号码
@@ -50,7 +50,7 @@ def analyze_deduction_rules():
             if manual_result != system_result:
                 private_number_mismatches += 1
         
-        # 比较审核结果
+        # 比较操作类型
         if manual_result != system_result:
             mismatches += 1
             
@@ -270,7 +270,7 @@ def analyze_deduction_rules():
                 
     # 输出统计信息
     mismatch_rate = (mismatches / len(df)) * 100
-    print(f"不一致的审核结果数量: {mismatches}条 ({mismatch_rate:.1f}%)")
+    print(f"不一致的操作类型数量: {mismatches}条 ({mismatch_rate:.1f}%)")
     
     # 输出私人号码统计
     if private_number_count > 0:
@@ -281,7 +281,7 @@ def analyze_deduction_rules():
     total_score = sum(mismatch_scores.values())
     
     if mismatches > 0:
-        print("\n审核结果不一致时的规则触发扣分分布（按扣分排序）:")
+        print("\n操作类型不一致时的规则触发扣分分布（按扣分排序）:")
         # 按扣分排序
         sorted_items = sorted(mismatch_scores.items(), key=lambda x: x[1], reverse=True)
         
@@ -314,12 +314,12 @@ def analyze_deduction_rules():
             ax.text(width + 1, bar.get_y() + bar.get_height()/2, label, va='center')
             
         ax.set_xlabel('扣分总值')
-        ax.set_title('审核结果不一致时的规则扣分分布')
+        ax.set_title('操作类型不一致时的规则扣分分布')
         plt.tight_layout()
         plt.savefig('deduction_distribution.png')
         print("图表已保存为 deduction_distribution.png")
     else:
-        print("未发现审核结果不一致的情况")
+        print("未发现操作类型不一致的情况")
         
     # 调用特定业务类型分析
     analyze_specific_business_types(df, system_results, validator)
@@ -330,7 +330,7 @@ def analyze_specific_business_types(df, system_results, validator):
     
     Args:
         df: Excel数据
-        system_results: 系统生成的审核结果
+        system_results: 系统生成的操作类型
         validator: BusinessValidator实例
     """
     print("\n\n===== 会销普通和行业通知业务类型误判详细分析 =====")
@@ -338,12 +338,12 @@ def analyze_specific_business_types(df, system_results, validator):
     # 初始化计数器
     business_stats = {
         '会销-普通': {
-            'false_positive': defaultdict(int),  # 系统拒绝但人工通过的规则触发统计
-            'false_negative': defaultdict(int),  # 系统通过但人工拒绝的规则触发统计
-            'false_positive_score': defaultdict(float),  # 系统拒绝但人工通过的规则扣分统计
-            'false_negative_score': defaultdict(float),  # 系统通过但人工拒绝的规则扣分统计
-            'total_fp': 0,  # 系统拒绝但人工通过的总数
-            'total_fn': 0,  # 系统通过但人工拒绝的总数
+            'false_positive': defaultdict(int),  # 系统拒绝但人工放行的规则触发统计
+            'false_negative': defaultdict(int),  # 系统放行但人工拒绝的规则触发统计
+            'false_positive_score': defaultdict(float),  # 系统拒绝但人工放行的规则扣分统计
+            'false_negative_score': defaultdict(float),  # 系统放行但人工拒绝的规则扣分统计
+            'total_fp': 0,  # 系统拒绝但人工放行的总数
+            'total_fn': 0,  # 系统放行但人工拒绝的总数
             'total': 0     # 总数
         },
         '行业-通知': {
@@ -359,13 +359,13 @@ def analyze_specific_business_types(df, system_results, validator):
     
     # 筛选这两种业务类型的行
     for i, row in df.iterrows():
-        business_type = row['客户业务类型']
+        business_type = row['产品类型']
         
         # 只分析会销普通和行业通知
         if business_type not in ['会销-普通', '行业-通知']:
             continue
             
-        manual_result = row['审核结果']
+        manual_result = row['操作类型']
         system_result = system_results[i]
         
         # 计数
@@ -373,13 +373,13 @@ def analyze_specific_business_types(df, system_results, validator):
         
         # 判断不一致类型
         if manual_result != system_result:
-            if manual_result == '通过' and system_result == '驳回':
+            if manual_result == '放行' and system_result == '失败':
                 # 系统过于严格（误判为拒绝）
                 business_stats[business_type]['total_fp'] += 1
                 inconsistency_type = 'false_positive'
                 score_type = 'false_positive_score'
             else:
-                # 系统过于宽松（误判为通过）
+                # 系统过于宽松（误判为放行）
                 business_stats[business_type]['total_fn'] += 1
                 inconsistency_type = 'false_negative'
                 score_type = 'false_negative_score'
@@ -387,7 +387,7 @@ def analyze_specific_business_types(df, system_results, validator):
             # 计算触发了哪些规则和对应扣分
             content = row['短信内容']
             signature = row['短信签名']
-            customer_type = row['客户类型']
+            customer_type = row['账户类型']
             
             # 清理内容和签名
             cleaned_content = validator._clean_content(content)
@@ -617,8 +617,8 @@ def analyze_specific_business_types(df, system_results, validator):
         
         print(f"\n== {business_type} ==")
         print(f"总样本数: {total}条")
-        print(f"系统过于严格（人工通过但系统拒绝）: {total_fp}条 ({fp_rate:.1f}%)")
-        print(f"系统过于宽松（人工拒绝但系统通过）: {total_fn}条 ({fn_rate:.1f}%)")
+        print(f"系统过于严格（人工放行但系统拒绝）: {total_fp}条 ({fp_rate:.1f}%)")
+        print(f"系统过于宽松（人工拒绝但系统放行）: {total_fn}条 ({fn_rate:.1f}%)")
         
         # 计算总扣分
         total_fp_score = sum(stats['false_positive_score'].values())
