@@ -1,7 +1,30 @@
-*.pyc
+# Python
 __pycache__/
-*.xlsx
-~
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
 .DS_Store
-sms_data.db
-无标题.csv
+Thumbs.db
+
+# Project specific
+*.xlsx
+*.csv
+*.db
+*.log
+logs/
+data/
+.pytest_cache/
