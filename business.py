@@ -30,20 +30,20 @@ class BusinessValidator:
         # 基础分数
         'BASE_SCORE': {
             '行业': {
-                '行业-通知': 100,  # 降低通知类基础分
-                '行业-物流': 100,   # 保持物流类基础分
+                '行业-通知': 100,  
+                '行业-物流': 100,   
             },
             '会销': {
-                '会销-普通': 120,   # 降低会销类基础分
-                '会销-金融': 100,   # 降低会销类基础分
+                '会销-普通': 120,   
+                '会销-金融': 100,   
             },
             '拉新': {
-                '拉新-催收': 100,   # 降低催收类基础分
-                '拉新-教育': 100,   # 降低教育类基础分
-                '拉新-网贷': 100,   # 降低网贷类基础分
-                '拉新-展会': 100,   # 降低展会类基础分
-                '拉新-医美': 100,   # 降低医美类基础分
-                '拉新-pos机': 100   # 降低pos机类基础分
+                '拉新-催收': 100,   
+                '拉新-教育': 100,   
+                '拉新-网贷': 100,   
+                '拉新-展会': 100,   
+                '拉新-医美': 100,   
+                '拉新-pos机': 100   
             },
             'default': 100
         },
@@ -72,8 +72,8 @@ class BusinessValidator:
                     '优惠', '特惠', '红包', '亲爱的', 'app', 'App', 'APP',
                     '特价', '折扣', '促销', '活动'
                 },
-                'score': -10,  # 优化：减轻营销关键词扣分（从-20改为-10）
-                'max_deduction': -20,  # 优化：减轻最大扣分（从-40改为-20）
+                'score': -10,  
+                'max_deduction': -20,  
                 'strong_keywords': {
                     '抢购', '限量', '福利', '奖励', '领取', '权益', '抢',
                     '秒杀', '特供', '专享', '尊享', '特权', '免费', '报名', '超值', '多赚','详情'
@@ -100,16 +100,16 @@ class BusinessValidator:
                     '积分', '兑换', '+', '元', '领取', '使用', '会员',
                     '服务', '活动', '奖励', '赠送', '优惠券', '里程'
                 },
-                'score': -10,  # 优化：减轻积分营销扣分（从-20改为-10）
-                'max_deduction': -30,  # 优化：减轻最大扣分（从-60改为-30）
+                'score': -10,  
+                'max_deduction': -30,  
                 'business_specific': {
                     '行业-通知': {
-                        'score': -15,  # 优化：减轻通知类扣分（从-30改为-15）
-                        'max_deduction': -30   # 优化：减轻最大扣分（从-60改为-30）
+                        'score': -15, 
+                        'max_deduction': -30   
                     },
                     '会销-普通': {
-                        'score': -5,  # 优化：针对会销普通大幅减轻积分营销扣分
-                        'max_deduction': -15   # 优化：针对会销普通减轻最大扣分
+                        'score': -5,  
+                        'max_deduction': -15   
                     }
                 }
             },
@@ -120,20 +120,38 @@ class BusinessValidator:
                     '积分', '到期', '过期', '清零', '作废', '失效',
                     '即将到期', '即将清零', '即将作废', '清理', '清空' ,'逾期'
                 },
-                'score': -10,  # 优化：减轻积分到期扣分（从-20改为-10）
-                'max_deduction': -20,  # 优化：减轻最大扣分（从-30改为-20）
+                'score': -10,  
+                'max_deduction': -20,  
                 'business_specific': {
                     '行业-通知': {
-                        'score': -15,  # 优化：减轻通知类扣分（从-30改为-15）
-                        'max_deduction': -30  # 优化：减轻最大扣分（从-60改为-30）
+                        'score': -15,  
+                        'max_deduction': -30 
                     },
                     '会销-普通': {
-                        'score': -5,  # 优化：针对会销普通大幅减轻积分到期扣分
-                        'max_deduction': -10  # 优化：针对会销普通减轻最大扣分
+                        'score': -5,  
+                        'max_deduction': -10 
                     }
                 }
             },
             
+
+            # 催支付相关扣分规则，没用上2025.4.8
+            'PAYMENT_REMINDER': {
+                'keywords': {
+                    '尾款''支付','有效期'
+                },
+
+                'business_specific': {
+                    '行业-通知': {
+                        'score': -40,
+                        'max_deduction': -40
+            
+                    }
+                }
+            },
+
+
+
             # 招聘相关扣分规则
             'RECRUITMENT': {
                 'keywords': {
@@ -356,7 +374,7 @@ class BusinessValidator:
                         'max_deduction': -40
                     },
                     '拉新-催收': {
-                        'score': -00,  # 略微降低
+                        'score': -20,  # 略微降低
                         'max_deduction': -40
                     }
                 }
@@ -381,39 +399,24 @@ class BusinessValidator:
 
             # 链接相关扣分规则
             'LINK': {
-                'score': -10,  # 每个链接扣2分
-                'max_deduction': -20,  # 最大扣分6分
+                'score': -40,  # 每个链接扣2分
+                'max_deduction': -60,  # 最大扣分6分
                 'business_specific': {
                     '行业-通知': {
-                        'score': -20,  # 通知类每个链接扣1分
-                        'max_deduction': -40  # 通知类最大扣分3分
+                        'score': -40,  # 通知类每个链接扣1分
+                        'max_deduction': -60  # 通知类最大扣分3分
                     },
                     '会销-普通': {
-                        'score': -30,  # 会销普通类每个链接扣1分
+                        'score': -40,  # 会销普通类每个链接扣1分
                         'max_deduction': -60  # 会销普通类最大扣分3分
-                    }
+                    },
+                    '拉新-催收': {
+                        'score': -40,  # 会销普通类每个链接扣1分
+                        'max_deduction': -60  # 会销普通类最大扣分3分
+                    },
                 }
             },
             
-            # 添加微信公众号扣分规则
-            'WECHAT': {
-                'score': -20,  # 默认扣20分
-                'max_deduction': -20,  # 最大扣分20分
-                'business_specific': {
-                    '会销-普通': {
-                        'score': -20,  # 会销类默认扣20分
-                        'max_deduction': -20
-                    },
-                    '行业-通知': {
-                        'score': -15,  # 行业类扣15分
-                        'max_deduction': -15
-                    },
-                    '拉新-催收': {
-                        'score': -15,  # 拉新催收类扣15分
-                        'max_deduction': -15
-                    }
-                }
-            },
             
             # 医疗相关扣分规则
             'MEDICAL': {
@@ -561,38 +564,7 @@ class BusinessValidator:
         self.score_details = {}  # 用于存储评分详情
     
 
-    def _clean_content(self, content: str) -> str:
-        """
-        清理文本内容，去除无关字符和格式化。这是所有文本处理的第一步。
-        
-        Args:
-            content: 原始文本
-            
-        Returns:
-            str: 清理后的文本
-        """
-        if not content:
-            return ""
-        
-        # 1. 基础清理
-        content = content.lower()  # 转换为小写
-        
-        # 2. 空白字符处理
-        content = re.sub(r'[\s\u3000]+', '', content)  # 替换所有类型的空格
-        content = re.sub(r'[\n\r]+', '', content)      # 替换所有换行符
-        
-        # 3. 标点符号处理
-        content = re.sub(r'[-‐‑‒–—―]+', '', content)   # 替换所有类型的破折号
-        content = re.sub(r'["""''′`´]+', '', content)  # 替换所有类型的引号
-        content = re.sub(r'[()（）[\]【】{}「」『』]+', '', content)  # 替换所有类型的括号
-        
-        # 4. 重复标点处理
-        content = re.sub(r'[,.。，、!！?？~～]+', lambda m: m.group()[0], content)
-        
-        # 5. 特殊字符处理
-        content = re.sub(r'[★☆✦✧✩✪✫✬✭✮✯✰⭐️]+', '⭐', content)  # 统一星号表示
-        
-        return content
+    
 
     def _validate_business_internal(self, business_type: str, cleaned_content: str, cleaned_signature: str, account_type: str = None) -> Tuple[bool, str]:
         """
@@ -651,7 +623,7 @@ class BusinessValidator:
             final_score += bonus
             self.score_details['bonuses'].append(f"特定关键词签名加分: +{bonus}")
         
-        # 更新最终得分
+        # 更新总分
         self.score_details['final_score'] = final_score
         
         # 判断是否通过
@@ -659,66 +631,13 @@ class BusinessValidator:
         if passed:
             reasons = [
                 f"基础分: {self.score_details['base_score']}",
-                f"最终得分: {final_score:.2f}"
+                f"总分: {final_score:.2f}"
             ]
             return True, f"审核通过 (原因: {', '.join(reasons)})"
         else:
             return False, f"审核不通过 (总分: {final_score:.2f})"
 
-    def _contains_address(self, text: str) -> Tuple[bool, int, List[str]]:
-        """
-        使用cpca库检测文本中是否包含详细地址
-        
-        Args:
-            text: 待检查的文本
-            
-        Returns:
-            Tuple[bool, int, List[str]]: (是否包含地址, 地址特征数量, 检测到的地址列表)
-        """
-        # 使用cpca进行地址识别
-        df = pd.DataFrame([text], columns=['地址'])
-        df_with_addr = cpca.transform(df['地址'])
-        
-        # 只在地址列有内容时才判定为存在地址
-        has_address = not df_with_addr['地址'].isna().all() and df_with_addr['地址'][0]
-        
-        # 提取检测到的地址
-        detected_addresses = []
-        if has_address:
-            # 构建完整地址
-            for i in range(len(df_with_addr)):
-                addr_parts = []
-                if not pd.isna(df_with_addr['省'][i]):
-                    addr_parts.append(df_with_addr['省'][i])
-                if not pd.isna(df_with_addr['市'][i]):
-                    addr_parts.append(df_with_addr['市'][i])
-                if not pd.isna(df_with_addr['区'][i]):
-                    addr_parts.append(df_with_addr['区'][i])
-                if not pd.isna(df_with_addr['地址'][i]):
-                    addr_parts.append(df_with_addr['地址'][i])
-                
-                if addr_parts:
-                    detected_addresses.append(''.join(addr_parts))
-        
-        # 计算地址特征分数
-        addr_score = 0
-        
-        # 基于cpca检测结果
-        if has_address:
-            # 基础分数
-            addr_score += 1
-            
-            # 检查地址完整度，每有一个组成部分增加1分
-            if not df_with_addr['省'].isna().all():
-                addr_score += 1
-            if not df_with_addr['市'].isna().all():
-                addr_score += 1
-            if not df_with_addr['区'].isna().all():
-                addr_score += 1
-            if not df_with_addr['地址'].isna().all() and df_with_addr['地址'][0]:
-                addr_score += 1
-        
-        return has_address, addr_score, detected_addresses
+    
 
     def _score_industry(self, business_type: str, cleaned_content: str, cleaned_signature: str) -> Tuple[bool, str]:
         """
@@ -907,12 +826,13 @@ class BusinessValidator:
             dating_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['DATING']['keywords'] if keyword in cleaned_content)
             if dating_matches > 0:
                 # 修正：使用max而非min来应用扣分上限
-                deduction = max(
-                    self.SCORE_RULES['DEDUCTIONS']['DATING']['business_specific']['行业-通知']['score'] * dating_matches,
-                    self.SCORE_RULES['DEDUCTIONS']['DATING']['business_specific']['行业-通知']['max_deduction']
-                )
+                if business_type in self.SCORE_RULES['DEDUCTIONS']['DATING'].get('business_specific', {}):
+                    deduction = max(
+                        self.SCORE_RULES['DEDUCTIONS']['DATING']['business_specific'][business_type]['score'] * dating_matches,
+                        self.SCORE_RULES['DEDUCTIONS']['DATING']['business_specific'][business_type]['max_deduction']
+                    )
                 deductions.append(deduction)
-                deduction_details.append(f"交友关键词扣分: {deduction} (匹配数量: {dating_matches})")
+                deduction_details.append(f"交友关键词扣分: {deduction} (匹配数量: {dating_matches})")    
 
             # 检查征兵相关词
             military_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['MILITARY']['keywords'] if keyword in cleaned_content)
@@ -941,8 +861,8 @@ class BusinessValidator:
             if has_address:
                 # 修正：使用max而非min来实现扣分上限
                 deduction = max(
-                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific']['行业-通知']['score'] * address_score,
-                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific']['行业-通知']['max_deduction']
+                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific'][business_type]['score'] * address_score,
+                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific'][business_type]['max_deduction']
                 )
                 deductions.append(deduction)
                 address_info = ", ".join(detected_addresses) if detected_addresses else f"地址特征分数: {address_score}"
@@ -1120,7 +1040,7 @@ class BusinessValidator:
         if passed:
             reasons = [
                 f"基础分: {base_score}",
-                f"最终得分: {final_score:.2f}"
+                f"总分: {final_score:.2f}"
             ]
             return True, f"审核通过 (原因: {', '.join(reasons)})"
         else:
@@ -1373,20 +1293,20 @@ class BusinessValidator:
         dating_matches = sum(1 for keyword in self.SCORE_RULES['DEDUCTIONS']['DATING']['keywords'] if keyword in cleaned_content)
         if dating_matches > 0:
             # 修正：使用max而非min来应用扣分上限
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['DATING']['business_specific']['会销-普通']['score'] * dating_matches,
-                self.SCORE_RULES['DEDUCTIONS']['DATING']['business_specific']['会销-普通']['max_deduction']
-            )
+            if business_type in self.SCORE_RULES['DEDUCTIONS']['DATING'].get('business_specific', {}):
+                deduction = max(
+                    self.SCORE_RULES['DEDUCTIONS']['DATING']['business_specific'][business_type]['score'] * dating_matches,
+                    self.SCORE_RULES['DEDUCTIONS']['DATING']['business_specific'][business_type]['max_deduction']
+                )
+
             deductions.append(deduction)
             deduction_details.append(f"交友关键词扣分: {deduction} (匹配数量: {dating_matches})")    
 
-
-        # 会销-普通特殊验证
-        if business_type == "会销-普通":                                        
-            # 检查微信公众号关键词
-            wechat_matches = sum(1 for keyword in self.WECHAT_KEYWORDS if keyword in cleaned_content)
-            if wechat_matches > 0:
-                # 根据匹配数量应用不同扣分
+        # 检查微信公众号关键词
+        wechat_matches = sum(1 for keyword in self.WECHAT_KEYWORDS if keyword in cleaned_content)
+        if wechat_matches > 0:
+            # 根据匹配数量应用不同扣分
+            if business_type in self.SCORE_RULES['DEDUCTIONS']['WECHAT'].get('business_specific', {}):
                 if wechat_matches >= 2:
                     deduction = self.SCORE_RULES['DEDUCTIONS']['WECHAT']['business_specific'][business_type]['score']
                 else: # wechat_matches == 1
@@ -1394,32 +1314,35 @@ class BusinessValidator:
                 
                 # 应用最大扣分限制
                 deduction = max(deduction, self.SCORE_RULES['DEDUCTIONS']['WECHAT']['business_specific'][business_type]['max_deduction'])
-                deductions.append(deduction)
-                deduction_details.append(f"微信公众号关键词扣分: {deduction} (匹配数量: {wechat_matches})")
-                
-            # 检查地址
-            has_address, address_score, detected_addresses = self._contains_address(cleaned_content)
-            if has_address:
-                # 修正：使用max而非min来实现扣分上限
+            
+            deductions.append(deduction)
+            deduction_details.append(f"微信公众号关键词扣分: {deduction} (匹配数量: {wechat_matches})")
+            
+        # 检查地址
+        has_address, address_score, detected_addresses = self._contains_address(cleaned_content)
+        if has_address:
+            # 修正：使用max而非min来实现扣分上限
+            if business_type in self.SCORE_RULES['DEDUCTIONS']['ADDRESS'].get('business_specific', {}):
                 deduction = max(
-                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific']['会销-普通']['score'] * address_score,
-                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific']['会销-普通']['max_deduction']
+                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific'][business_type]['score'] * address_score,
+                    self.SCORE_RULES['DEDUCTIONS']['ADDRESS']['business_specific'][business_type]['max_deduction']
                 )
-                deductions.append(deduction)
-                address_info = ", ".join(detected_addresses) if detected_addresses else f"地址特征分数: {address_score}"
-                deduction_details.append(f"地址扣分: {deduction} ({address_info})")
+            
+            deductions.append(deduction)
+            address_info = ", ".join(detected_addresses) if detected_addresses else f"地址特征分数: {address_score}"
+            deduction_details.append(f"地址扣分: {deduction} ({address_info})")
 
-                
-            # 如果固定电话和链接同时出现，增加链接扣分
-            if has_fixed_phone and has_link:
-                # 找出链接扣分在列表中的位置
-                link_index = 1  # 通常是第二个，因为在固定电话之后处理
-                if len(deductions) > link_index and deductions[link_index] < 0:  # 确保是扣分项且存在
-                    # 使用配置的增强系数
-                    link_enhancement_factor = self.SCORE_RULES['COOCCURRENCE']['PHONE_LINK_REDUCTION']
-                    original_deduction = deductions[link_index]
-                    deductions[link_index] = original_deduction * link_enhancement_factor
-                    deduction_details[link_index] += f" (与固定电话共现增强: +{int((link_enhancement_factor-1)*100)}%)"
+            
+        # 如果固定电话和链接同时出现，增加链接扣分
+        if has_fixed_phone and has_link:
+            # 找出链接扣分在列表中的位置
+            link_index = 1  # 通常是第二个，因为在固定电话之后处理
+            if len(deductions) > link_index and deductions[link_index] < 0:  # 确保是扣分项且存在
+                # 使用配置的增强系数
+                link_enhancement_factor = self.SCORE_RULES['COOCCURRENCE']['PHONE_LINK_REDUCTION'].get(business_type, 1.2)
+                original_deduction = deductions[link_index]
+                deductions[link_index] = original_deduction * link_enhancement_factor
+                deduction_details[link_index] += f" (与固定电话共现增强: +{int((link_enhancement_factor-1)*100)}%)"
         
         # 应用非线性扣分计算
         # 区分正向加分和负向扣分
@@ -1459,7 +1382,7 @@ class BusinessValidator:
         if passed:
             reasons = [
                 f"基础分: {base_score}",
-                f"最终得分: {final_score:.2f}"
+                f"总分: {final_score:.2f}"
             ]
             return True, f"审核通过 (原因: {', '.join(reasons)})"
         else:
@@ -1563,11 +1486,102 @@ class BusinessValidator:
         if passed:
             reasons = [
                 f"基础分: {base_score}",
-                f"最终得分: {final_score:.2f}"
+                f"总分: {final_score:.2f}"
             ]
             return True, f"审核通过 (原因: {', '.join(reasons)})"
         else:
             return False, f"审核不通过 (总分: {final_score:.2f})"
+
+
+    def _clean_content(self, content: str) -> str:
+        """
+        清理文本内容，去除无关字符和格式化。这是所有文本处理的第一步。
+        
+        Args:
+            content: 原始文本
+            
+        Returns:
+            str: 清理后的文本
+        """
+        if not content:
+            return ""
+        
+        # 1. 基础清理
+        content = content.lower()  # 转换为小写
+        
+        # 2. 空白字符处理
+        content = re.sub(r'[\s\u3000]+', '', content)  # 替换所有类型的空格
+        content = re.sub(r'[\n\r]+', '', content)      # 替换所有换行符
+        
+        # 3. 标点符号处理
+        content = re.sub(r'[-‐‑‒–—―]+', '', content)   # 替换所有类型的破折号
+        content = re.sub(r'["""''′`´]+', '', content)  # 替换所有类型的引号
+        content = re.sub(r'[()（）[\]【】{}「」『』]+', '', content)  # 替换所有类型的括号
+        
+        # 4. 重复标点处理
+        content = re.sub(r'[,。，、!！?？~～]+', lambda m: m.group()[0], content)
+        
+        # 5. 特殊字符处理
+        content = re.sub(r'[★☆✦✧✩✪✫✬✭✮✯✰⭐️]+', '', content)  # 统一星号表示
+        
+        return content
+
+
+    def _contains_address(self, text: str) -> Tuple[bool, int, List[str]]:
+        """
+        使用cpca库检测文本中是否包含详细地址
+        
+        Args:
+            text: 待检查的文本
+            
+        Returns:
+            Tuple[bool, int, List[str]]: (是否包含地址, 地址特征数量, 检测到的地址列表)
+        """
+        # 使用cpca进行地址识别
+        df = pd.DataFrame([text], columns=['地址'])
+        df_with_addr = cpca.transform(df['地址'])
+        
+        # 只在地址列有内容时才判定为存在地址
+        has_address = not df_with_addr['地址'].isna().all() and df_with_addr['地址'][0]
+        
+        # 提取检测到的地址
+        detected_addresses = []
+        if has_address:
+            # 构建完整地址
+            for i in range(len(df_with_addr)):
+                addr_parts = []
+                if not pd.isna(df_with_addr['省'][i]):
+                    addr_parts.append(df_with_addr['省'][i])
+                if not pd.isna(df_with_addr['市'][i]):
+                    addr_parts.append(df_with_addr['市'][i])
+                if not pd.isna(df_with_addr['区'][i]):
+                    addr_parts.append(df_with_addr['区'][i])
+                if not pd.isna(df_with_addr['地址'][i]):
+                    addr_parts.append(df_with_addr['地址'][i])
+                
+                if addr_parts:
+                    detected_addresses.append(''.join(addr_parts))
+        
+        # 计算地址特征分数
+        addr_score = 0
+        
+        # 基于cpca检测结果
+        if has_address:
+            # 基础分数
+            addr_score += 1
+            
+            # 检查地址完整度，每有一个组成部分增加1分
+            if not df_with_addr['省'].isna().all():
+                addr_score += 1
+            if not df_with_addr['市'].isna().all():
+                addr_score += 1
+            if not df_with_addr['区'].isna().all():
+                addr_score += 1
+            if not df_with_addr['地址'].isna().all() and df_with_addr['地址'][0]:
+                addr_score += 1
+        
+        return has_address, addr_score, detected_addresses
+        
 
     def _contains_private_number(self, text: str) -> bool:
         """
@@ -1657,8 +1671,14 @@ class BusinessValidator:
             # 特定平台短链接，包括淘宝、京东、饿了么、抖音、微博等
             r'(?:tb\.cn|jd\.com|ele\.me|douyin\.com|weibo\.com|qq\.com|taobao\.com|tmall\.com|pinduoduo\.com|kuaishou\.com|bilibili\.com|youku\.com|iqiyi\.com|meituan\.com|dianping\.com|alipay\.com|weixin\.qq\.com)/[-\w/]+',
             
-            # IP地址格式链接（支持IPv6）
-            r'https?://(?:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4})(?::\d+)?(?:/[^\s]*)?'
+            # IPv4地址格式
+            r'(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?::\d{1,5})?(?:/[^\s]*)?',
+            
+            # IPv6地址格式
+            r'(?:(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:(?:(?::[0-9a-fA-F]{1,4}){1,6})|:(?:(?::[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(?::[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(?:ffff(?::0{1,4}){0,1}:){0,1}(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])|(?:[0-9a-fA-F]{1,4}:){1,4}:(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(?::\d{1,5})?(?:/[^\s]*)?',
+            
+            # 带端口的IP地址格式
+            r'(?:https?://)?(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?):\d{1,5}(?:/[^\s]*)?'
         ]
         
         # 合并所有模式
