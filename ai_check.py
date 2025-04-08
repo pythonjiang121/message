@@ -23,7 +23,7 @@ class AIAuditor:
         初始化AI审核器，API密钥直接在类中定义
         """
         self.api_endpoint = "https://api.deepseek.com/v3/chat/completions"
-        self.api_key = "sk-fdb5269b9e0e43aca3cf7dea21d63322"  # 直接使用固定的API密钥
+        self.api_key = ""  # 直接使用固定的API密钥
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
