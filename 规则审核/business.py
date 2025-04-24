@@ -597,29 +597,29 @@ class BusinessValidator:
                 }
             },
 
-            # 链接相关扣分规则
-            'LINK': {
-                'score': -40,  
-                'max_deduction': -60, 
-                'business_specific': {
-                    '行业-通知': {
-                        'score': -50,  
-                        'max_deduction': -50  
-                    },
-                    '行业-物流': {
-                        'score': -50,  
-                        'max_deduction': -50  
-                    },
-                    '会销-普通': {
-                        'score': -80,  
-                        'max_deduction': -80  
-                    },
-                    '拉新-催收': {
-                        'score': -50, 
-                        'max_deduction': -50  
-                    },
-                }
-            },
+            # # 链接相关扣分规则
+            # 'LINK': {
+            #     'score': -40,  
+            #     'max_deduction': -60, 
+            #     'business_specific': {
+            #         '行业-通知': {
+            #             'score': -50,  
+            #             'max_deduction': -50  
+            #         },
+            #         '行业-物流': {
+            #             'score': -50,  
+            #             'max_deduction': -50  
+            #         },
+            #         '会销-普通': {
+            #             'score': -80,  
+            #             'max_deduction': -80  
+            #         },
+            #         '拉新-催收': {
+            #             'score': -50, 
+            #             'max_deduction': -50  
+            #         },
+            #     }
+            # },
             
             
             # 医疗疾病扣分规则
@@ -889,14 +889,14 @@ class BusinessValidator:
             # deduction_details.append(f"私人号码违规: 拒绝通过 (检测到: {', '.join(private_numbers)})")
             return False, f"审核不通过 (原因: 含有私人号码: {', '.join(private_numbers)}) (基础分: 100, 总分: 0)"
 
-        # 检测链接（提前检测以便后续共现规则使用）
-        has_link, link_count = self._contains_link(cleaned_content)
-        if has_link:
-            link_deduction = self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['score'] * link_count
-            # 使用max确保不超过最大扣分限制
-            link_deduction = max(link_deduction, self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['max_deduction'])
-            deductions.append(link_deduction)
-            deduction_details.append(f"链接扣分: {link_deduction} (链接数量: {link_count})")
+        # # 检测链接（提前检测以便后续共现规则使用）
+        # has_link, link_count = self._contains_link(cleaned_content)
+        # if has_link:
+        #     link_deduction = self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['score'] * link_count
+        #     # 使用max确保不超过最大扣分限制
+        #     link_deduction = max(link_deduction, self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['max_deduction'])
+        #     deductions.append(link_deduction)
+        #     deduction_details.append(f"链接扣分: {link_deduction} (链接数量: {link_count})")
 
         # 检查固定电话
         has_fixed_phone, fixed_phone_count, fixed_phone_numbers = self._contains_fixed_phone(cleaned_content)
@@ -1264,14 +1264,14 @@ class BusinessValidator:
             # deduction_details.append(f"私人号码违规: 拒绝通过 (检测到: {', '.join(private_numbers)})")
             return False, f"审核不通过 (原因: 含有私人号码: {', '.join(private_numbers)}) (基础分: 100, 总分: 0)"
 
-        # 检测链接（提前检测以便后续共现规则使用）
-        has_link, link_count = self._contains_link(cleaned_content)
-        if has_link:
-            link_deduction = self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['score'] * link_count
-            # 使用max确保不超过最大扣分限制
-            link_deduction = max(link_deduction, self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['max_deduction'])
-            deductions.append(link_deduction)
-            deduction_details.append(f"链接扣分: {link_deduction} (链接数量: {link_count})")
+        # # 检测链接（提前检测以便后续共现规则使用）
+        # has_link, link_count = self._contains_link(cleaned_content)
+        # if has_link:
+        #     link_deduction = self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['score'] * link_count
+        #     # 使用max确保不超过最大扣分限制
+        #     link_deduction = max(link_deduction, self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['max_deduction'])
+        #     deductions.append(link_deduction)
+        #     deduction_details.append(f"链接扣分: {link_deduction} (链接数量: {link_count})")
 
         # 检查固定电话
         has_fixed_phone, fixed_phone_count, fixed_phone_numbers = self._contains_fixed_phone(cleaned_content)
@@ -1284,16 +1284,16 @@ class BusinessValidator:
             deduction_details.append(f"固定电话扣分: {phone_deduction} (检测到: {', '.join(fixed_phone_numbers)})")
         
         
-        # 检查营销关键词
-        marketing_keywords = [k for k in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['keywords'] if k in cleaned_content]
-        marketing_keywords_count = len(marketing_keywords)        
-        if marketing_keywords_count > 0:      
-            deduction = max(
-                self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific'][business_type]['score'] * marketing_keywords_count,
-                self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific'][business_type]['max_deduction']
-            )           
-            deductions.append(deduction)
-            deduction_details.append(f"\n营销关键词扣分: {deduction} (匹配词: {', '.join(marketing_keywords) }, 匹配数量: {marketing_keywords_count})")        
+        # # 检查营销关键词
+        # marketing_keywords = [k for k in self.SCORE_RULES['DEDUCTIONS']['MARKETING']['keywords'] if k in cleaned_content]
+        # marketing_keywords_count = len(marketing_keywords)        
+        # if marketing_keywords_count > 0:      
+        #     deduction = max(
+        #         self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific'][business_type]['score'] * marketing_keywords_count,
+        #         self.SCORE_RULES['DEDUCTIONS']['MARKETING']['business_specific'][business_type]['max_deduction']
+        #     )           
+        #     deductions.append(deduction)
+        #     deduction_details.append(f"\n营销关键词扣分: {deduction} (匹配词: {', '.join(marketing_keywords) }, 匹配数量: {marketing_keywords_count})")        
 
 
         # 检查会员积分营销关键词
@@ -1580,14 +1580,14 @@ class BusinessValidator:
         if has_private_number:
             return False, f"审核不通过 (原因: 含有私人号码: {', '.join(private_numbers)}) (基础分: 100, 总分: 0)"
 
-        # 检测链接（提前检测以便后续共现规则使用）
-        has_link, link_count = self._contains_link(cleaned_content)
-        if has_link:
-            link_deduction = self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['score'] * link_count
-            # 使用max确保不超过最大扣分限制
-            link_deduction = max(link_deduction, self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['max_deduction'])
-            deductions.append(link_deduction)
-            deduction_details.append(f"链接扣分: {link_deduction} (链接数量: {link_count})")
+        # # 检测链接（提前检测以便后续共现规则使用）
+        # has_link, link_count = self._contains_link(cleaned_content)
+        # if has_link:
+        #     link_deduction = self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['score'] * link_count
+        #     # 使用max确保不超过最大扣分限制
+        #     link_deduction = max(link_deduction, self.SCORE_RULES['DEDUCTIONS']['LINK']['business_specific'][business_type]['max_deduction'])
+        #     deductions.append(link_deduction)
+        #     deduction_details.append(f"链接扣分: {link_deduction} (链接数量: {link_count})")
 
         # 检查固定电话
         has_fixed_phone, fixed_phone_count, fixed_phone_numbers = self._contains_fixed_phone(cleaned_content)
@@ -1805,53 +1805,53 @@ class BusinessValidator:
                 return category
         return ""
     
-    def _contains_link(self, text: str) -> Tuple[bool, int]:
-        """
-        使用正则表达式检查文本中是否包含链接
+    # def _contains_link(self, text: str) -> Tuple[bool, int]:
+    #     """
+    #     使用正则表达式检查文本中是否包含链接
         
-        Args:
-            text: 待检查的文本
+    #     Args:
+    #         text: 待检查的文本
             
-        Returns:
-            Tuple[bool, int]: (是否包含链接, 链接数量)
-        """
-        # 定义链接匹配模式
-        url_patterns = [
-            # 标准URL格式（支持更多协议）
-            r'(?:https?|ftp|file|ws|wss)://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[^\s]*',
+    #     Returns:
+    #         Tuple[bool, int]: (是否包含链接, 链接数量)
+    #     """
+    #     # 定义链接匹配模式
+    #     url_patterns = [
+    #         # 标准URL格式（支持更多协议）
+    #         r'(?:https?|ftp|file|ws|wss)://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[^\s]*',
             
-            # 带www的网址（支持更多子域名）
-            r'(?:www|wap|m)\.(?:[-\w.]|(?:%[\da-fA-F]{2}))+[^\s]*',
+    #         # 带www的网址（支持更多子域名）
+    #         r'(?:www|wap|m)\.(?:[-\w.]|(?:%[\da-fA-F]{2}))+[^\s]*',
             
-            # 常见顶级域名格式（扩展域名列表）
-            r'(?:[-\w.]|(?:%[\da-fA-F]{2}))+\.(?:com|cn|net|org|gov|edu|io|app|xy≠|top|me|tv|cc|shop|vip|ltd|store|online|tech|site|wang|cloud|link|live|work|game|fun|art|xin|ren|space|team|news|law|group|center|city|world|life|co|red|mobi|pro|info|name|biz|asia|tel|club|social|video|press|company|website|email|network|studio|design|software|blog|wiki|forum|run|zone|plus|cool|show|gold|today|market|business|company|zone|media|agency|directory|technology|solutions|international|enterprises|industries|management|consulting|services)(?:/[^\s]*)?',
+    #         # 常见顶级域名格式（扩展域名列表）
+    #         r'(?:[-\w.]|(?:%[\da-fA-F]{2}))+\.(?:com|cn|net|org|gov|edu|io|app|xy≠|top|me|tv|cc|shop|vip|ltd|store|online|tech|site|wang|cloud|link|live|work|game|fun|art|xin|ren|space|team|news|law|group|center|city|world|life|co|red|mobi|pro|info|name|biz|asia|tel|club|social|video|press|company|website|email|network|studio|design|software|blog|wiki|forum|run|zone|plus|cool|show|gold|today|market|business|company|zone|media|agency|directory|technology|solutions|international|enterprises|industries|management|consulting|services)(?:/[^\s]*)?',
             
-            # 短链接格式（扩展常见短链接服务）
-            r'(?:t|u|dwz|url|c|s|m|j|h5|v|w)\.(?:cn|com|me|ly|gl|gd|ink|run|app|fun|pub|pro|vip|cool|link|live|work|game|art|red|tel|club|show|gold|today)(?:/[-\w]+)+',
+    #         # 短链接格式（扩展常见短链接服务）
+    #         r'(?:t|u|dwz|url|c|s|m|j|h5|v|w)\.(?:cn|com|me|ly|gl|gd|ink|run|app|fun|pub|pro|vip|cool|link|live|work|game|art|red|tel|club|show|gold|today)(?:/[-\w]+)+',
             
-            # 特定平台短链接，包括淘宝、京东、饿了么、抖音、微博等
-            r'(?:tb\.cn|jd\.com|ele\.me|douyin\.com|weibo\.com|qq\.com|taobao\.com|tmall\.com|pinduoduo\.com|kuaishou\.com|bilibili\.com|youku\.com|iqiyi\.com|meituan\.com|dianping\.com|alipay\.com|weixin\.qq\.com)/[-\w/]+',
+    #         # 特定平台短链接，包括淘宝、京东、饿了么、抖音、微博等
+    #         r'(?:tb\.cn|jd\.com|ele\.me|douyin\.com|weibo\.com|qq\.com|taobao\.com|tmall\.com|pinduoduo\.com|kuaishou\.com|bilibili\.com|youku\.com|iqiyi\.com|meituan\.com|dianping\.com|alipay\.com|weixin\.qq\.com)/[-\w/]+',
             
-            # IPv4地址格式
-            r'(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?::\d{1,5})?(?:/[^\s]*)?',
+    #         # IPv4地址格式
+    #         r'(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?::\d{1,5})?(?:/[^\s]*)?',
             
-            # IPv6地址格式
-            r'(?:(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:(?:(?::[0-9a-fA-F]{1,4}){1,6})|:(?:(?::[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(?::[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(?:ffff(?::0{1,4}){0,1}:){0,1}(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])|(?:[0-9a-fA-F]{1,4}:){1,4}:(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(?::\d{1,5})?(?:/[^\s]*)?',
+    #         # IPv6地址格式
+    #         r'(?:(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:(?:(?::[0-9a-fA-F]{1,4}){1,6})|:(?:(?::[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(?::[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(?:ffff(?::0{1,4}){0,1}:){0,1}(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])|(?:[0-9a-fA-F]{1,4}:){1,4}:(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(?::\d{1,5})?(?:/[^\s]*)?',
             
-            # 带端口的IP地址格式
-            r'(?:https?://)?(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?):\d{1,5}(?:/[^\s]*)?'
-        ]
+    #         # 带端口的IP地址格式
+    #         r'(?:https?://)?(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?):\d{1,5}(?:/[^\s]*)?'
+    #     ]
         
-        # 合并所有模式
-        combined_pattern = '|'.join(f'({pattern})' for pattern in url_patterns)
+    #     # 合并所有模式
+    #     combined_pattern = '|'.join(f'({pattern})' for pattern in url_patterns)
         
-        # 查找所有匹配项
-        matches = re.findall(combined_pattern, text, re.IGNORECASE)
+    #     # 查找所有匹配项
+    #     matches = re.findall(combined_pattern, text, re.IGNORECASE)
         
-        # 计算匹配数量（matches是一个元组列表，每个元组包含所有捕获组）
-        link_count = sum(1 for match in matches if any(match))
+    #     # 计算匹配数量（matches是一个元组列表，每个元组包含所有捕获组）
+    #     link_count = sum(1 for match in matches if any(match))
         
-        return link_count > 0, link_count
+    #     return link_count > 0, link_count
 
     def _contains_fixed_phone(self, text: str) -> Tuple[bool, int, List[str]]:
         """

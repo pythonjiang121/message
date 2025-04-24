@@ -1,12 +1,19 @@
-# ai_audit.py
-
 import requests
 import json
 from typing import Dict, Tuple, List
 import logging
-from datetime import datetime
 import re
-from openai import OpenAI
+import numpy as np
+from ai_audit_prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE, BUSINESS_SPECIFIC_RULES
+
+# 添加向量化相关的导入
+try:
+    from sentence_transformers import SentenceTransformer
+    import faiss
+    VECTOR_ENABLED = True
+except ImportError:
+    VECTOR_ENABLED = False
+    logging.warning("sentence-transformers或faiss库未安装，向量化功能将不可用。请使用pip install sentence-transformers faiss-cpu安装。")
 
 
 # 配置日志
@@ -31,120 +38,62 @@ class AIAuditor:
             "Authorization": f"Bearer {self.api_key}"
         }
         
-        # 系统提示词
-        self.system_prompt = """你是一个专业的短信内容审核专家，负责评估短信是否符合监管要求和行业规范。
+        # 使用系统提示词
+        self.system_prompt = SYSTEM_PROMPT
+        # 添加token计数器
+        self.total_tokens_used = 0
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        
+        # 向量化和缓存相关设置
+        self.vector_enabled = VECTOR_ENABLED
+        if self.vector_enabled:
+            # 初始化文本向量化模型
+            try:
+                self.embedder = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+                self.vector_dim = 384  # 根据使用的模型调整
+                # 初始化向量索引
+                self.index = faiss.IndexFlatL2(self.vector_dim)
+                # 初始化缓存
+                self.sms_cache = []  # 存储短信文本
+                self.result_cache = []  # 存储对应审核结果
+                self.similarity_threshold = 0.85  # 相似度阈值
+                logging.info("向量化和缓存功能已初始化")
+            except Exception as e:
+                self.vector_enabled = False
+                logging.error(f"向量化功能初始化失败: {str(e)}")
+        else:
+            logging.info("向量化功能未启用，将使用常规审核方法")
 
-评估标准：
-1. 链接风险：
-- 短链接或可疑域名
-- 紧急催促用语
-- 不合理时效限制
-
-2. 营销话术：
-- 诱导性词语(首批/限量等)
-- 过高金额承诺
-- 制造紧迫感
-
-3. 业务合规：
-- 威胁性通知
-- 发送方身份
-- 管制敏感产品
-
-4. 内容真实性：
-- 夸大虚假宣传
-- 迷信伪科学
-- 优惠真实性
-
-5. 违规内容：
-- 涉黄涉赌
-- 涉诈涉暴
-- 涉政涉恐
-- 涉毒涉敏感信息
-- 高回报/免费获利
-
-请以JSON格式输出你的判断：
-{
-    "should_pass": true/false,
-    "reasons": ["具体理由1", "具体理由2"]
-}"""
-
-    def audit_sms(self, signature: str, content: str, business_type: str, 
-                 rule_score: float, rule_reason: str) -> Tuple[bool, Dict]:
+    def _process_api_response(self, response, method_name=""):
         """
-        对单条短信进行AI审核
+        处理API响应的通用方法，提取并处理结果
         
         Args:
-            signature: 短信签名
-            content: 短信内容
-            business_type: 业务类型
-            rule_score: 规则审核得分
-            rule_reason: 规则审核原因
+            response: API响应对象
+            method_name: 调用方法名称，用于日志区分
             
         Returns:
             Tuple[bool, Dict]: (是否通过审核, 审核结果详情)
         """
         try:
-            # 构建用户提示词
-            user_prompt = f"""请审核以下短信内容：
-
-签名：【{signature}】
-内容：{content}
-业务类型：{business_type}
-规则审核分数：{rule_score}
-规则审核原因：{rule_reason}
-
-请仔细评估短信内容是否符合规范，重点关注以下风险点：
-
-1. 链接风险：
-- 短链接或可疑域名
-- 紧急催促用语
-- 不合理时效限制
-
-2. 营销话术：
-- 诱导性词语(首批/限量等)
-- 过高金额承诺
-- 制造紧迫感
-
-3. 业务合规：
-- 威胁性通知
-- 发送方身份
-- 管制敏感产品
-
-4. 内容真实性：
-- 夸大虚假宣传
-- 迷信伪科学
-- 优惠真实性
-
-5. 违规内容：
-- 涉黄涉赌
-- 涉诈涉暴
-- 涉政涉恐
-- 涉毒涉敏感信息
-- 高回报/免费获利
-
-请严格评估以上风险点,发现任一风险即判定不通过。
-"""
-
-            # 构建请求数据
-            payload = {
-                "model": "deepseek-chat",  # 使用适当的模型名称
-                "messages": [
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.1  # 降低随机性，使输出更确定
-            }
-
-            # 发送请求
-            response = requests.post(
-                self.api_endpoint,
-                headers=self.headers,
-                data=json.dumps(payload)
-            )
-            # 接受请求
             if response.status_code == 200:
                 result = response.json()
                 ai_response = result["choices"][0]["message"]["content"]
+                
+                # 记录token使用情况
+                usage = result.get("usage", {})
+                input_tokens = usage.get("prompt_tokens", 0)
+                output_tokens = usage.get("completion_tokens", 0)
+                total_tokens = usage.get("total_tokens", 0)
+                
+                # 更新总计数器
+                self.total_input_tokens += input_tokens
+                self.total_output_tokens += output_tokens
+                self.total_tokens_used += total_tokens
+                
+                # 记录本次调用的token使用情况
+                logging.info(f"{method_name} Token使用: 输入={input_tokens}, 输出={output_tokens}, 总计={total_tokens}")
                 
                 # 去除可能存在的代码块标记
                 clean_response = ai_response
@@ -161,10 +110,77 @@ class AIAuditor:
                 
                 # 解析清理后的JSON
                 audit_result = json.loads(clean_response)
+                
+                # 将token使用情况添加到审核结果中
+                audit_result["token_usage"] = {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens
+                }
+                
                 return audit_result["should_pass"], audit_result
             else:
-                logging.error(f"API调用失败: {response.status_code}, {response.text}")
-                return False, {"error": f"API调用失败: {response.status_code}"}
+                error_msg = f"API调用失败: {response.status_code}"
+                if hasattr(response, 'text'):
+                    error_msg += f", {response.text}"
+                logging.error(f"{method_name} {error_msg}")
+                return False, {"error": error_msg}
+                
+        except json.JSONDecodeError as e:
+            error_msg = f"JSON解析错误: {str(e)}, 响应内容: {response.text if hasattr(response, 'text') else 'Unknown'}"
+            logging.error(f"{method_name} {error_msg}")
+            return False, {"error": error_msg}
+        except Exception as e:
+            logging.error(f"{method_name} 处理API响应出错: {str(e)}")
+            return False, {"error": str(e)}
+
+
+    def audit_sms(self, signature: str, content: str, business_type: str) -> Tuple[bool, Dict]:
+        """
+        对单条短信进行AI审核(原始方法)
+        
+        Args:
+            signature: 短信签名
+            content: 短信内容
+            business_type: 业务类型
+            
+        Returns:
+            Tuple[bool, Dict]: (是否通过审核, 审核结果详情)
+        """
+        try:
+            # 获取业务特定规则
+            business_specific_rules = BUSINESS_SPECIFIC_RULES.get(
+                business_type, 
+                "此业务类型没有特定规则，请使用通用审核标准进行评估。"
+            )
+            
+            # 构建用户提示词，中包含了短信
+            user_prompt = USER_PROMPT_TEMPLATE.format(
+                signature=signature,
+                content=content,
+                business_type=business_type,
+                business_specific_rules=business_specific_rules
+            )
+
+            # 构建请求数据，传入系统提示词和用户提示词
+            payload = {
+                "model": "deepseek-chat",
+                "messages": [
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.1  # 降低随机性，使输出更确定
+            }
+
+            # 发送请求
+            response = requests.post(
+                self.api_endpoint,
+                headers=self.headers,
+                data=json.dumps(payload)
+            )
+            
+            # 处理响应
+            return self._process_api_response(response, "标准审核")
 
         except Exception as e:
             logging.error(f"AI审核过程出错: {str(e)}")
@@ -175,7 +191,7 @@ class AIAuditor:
         批量审核短信
         
         Args:
-            sms_list: 短信列表，每个元素包含 signature, content, business_type, rule_score, rule_reason
+            sms_list: 短信列表，每个元素包含 signature, content, business_type
             
         Returns:
             List[Dict]: 审核结果列表，每个元素包含 sms, passed, details
@@ -183,22 +199,33 @@ class AIAuditor:
         results = []
         total = len(sms_list)
         
-        logging.info(f"开始批量审核 {total} 条短信")
+        # 重置token计数器
+        self.total_tokens_used = 0
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        
+        logging.info(f"开始批量审核 {total} 条短信")   
         
         for i, sms in enumerate(sms_list):
             try:
                 # 记录进度
-                if i % 1 == 0:
+                if i % 10 == 0:
                     logging.info(f"正在处理: {i+1}/{total}")
                     
-                # 调用单条审核方法
-                passed, details = self.audit_sms(
-                    sms["signature"],
-                    sms["content"],
-                    sms["business_type"],
-                    sms["rule_score"],
-                    sms["rule_reason"]
-                )
+                # 优先使用缓存版本
+                if self.vector_enabled:
+                    passed, details = self.audit_sms_with_cache(
+                        sms["signature"], 
+                        sms["content"], 
+                        sms["business_type"]
+                    )
+                else:
+                    # 否则使用常规方法
+                    passed, details = self.audit_sms(
+                        sms["signature"], 
+                        sms["content"], 
+                        sms["business_type"]
+                    )
                 
                 # 添加结果
                 results.append({
@@ -216,6 +243,170 @@ class AIAuditor:
                     "details": {"error": str(e)}
                 })
         
+        # 计算缓存命中率
+        if self.vector_enabled:
+            cache_hits = sum(1 for r in results if r.get("details", {}).get("cached", False))
+            hit_rate = (cache_hits / total) * 100 if total > 0 else 0
+            logging.info(f"缓存命中: {cache_hits}/{total} ({hit_rate:.1f}%)")
+        
+        # 记录总token使用情况
         logging.info(f"批量审核完成，共处理 {len(results)} 条短信")
+        logging.info(f"总Token消耗: 输入={self.total_input_tokens}, 输出={self.total_output_tokens}, 总计={self.total_tokens_used}")
+        logging.info(f"平均每条短信Token消耗: {self.total_tokens_used / len(results) if results else 0:.2f}")
+        
         return results
+    
+    def audit_sms_with_cache(self, signature: str, content: str, business_type: str) -> Tuple[bool, Dict]:
+        """
+        使用缓存机制对单条短信进行AI审核
+        
+        Args:
+            signature: 短信签名
+            content: 短信内容
+            business_type: 业务类型
+            
+        Returns:
+            Tuple[bool, Dict]: (是否通过审核, 审核结果详情)
+        """
+        # 构建完整的短信文本用于相似度比较
+        sms_text = f"{signature} {content} {business_type}"
+        
+        # 如果向量化功能启用，尝试从缓存获取结果
+        if self.vector_enabled:
+            try:
+                cached_result, similarity = self.find_similar_sms(sms_text)
+                
+                if cached_result:
+                    logging.info(f"从缓存获取结果，相似度: {similarity:.4f}")
+                    
+                    # 添加缓存标记到结果中
+                    result_copy = cached_result.copy()
+                    if "details" in result_copy and isinstance(result_copy["details"], dict):
+                        if "cached" not in result_copy["details"]:
+                            result_copy["details"]["cached"] = True
+                            result_copy["details"]["similarity_score"] = float(similarity)
+                    
+                    return result_copy["passed"], result_copy["details"]
+            except Exception as e:
+                logging.warning(f"从缓存获取结果失败: {str(e)}，将直接调用API")
+        
+        # 没有缓存命中或缓存检索出错，调用API审核
+        passed, result = self.audit_sms(signature, content, business_type)
+        
+        # 如果向量化功能启用，缓存结果
+        if self.vector_enabled:
+            try:
+                self.cache_result(sms_text, {
+                    "passed": passed,
+                    "details": result
+                })
+            except Exception as e:
+                logging.warning(f"缓存结果失败: {str(e)}")
+        
+        return passed, result
+    
+
+    def get_embedding(self, text):
+        """
+        将文本转换为向量
+        
+        Args:
+            text: 要向量化的文本
+            
+        Returns:
+            numpy.ndarray: 文本向量
+        """
+        if not self.vector_enabled:
+            return None
+            
+        try:
+            return self.embedder.encode([text])[0]
+        except Exception as e:
+            logging.error(f"文本向量化失败: {str(e)}")
+            return None
+    
+    def batch_get_embeddings(self, texts):
+        """
+        批量获取文本向量
+        
+        Args:
+            texts: 要向量化的文本列表
+            
+        Returns:
+            numpy.ndarray: 文本向量数组，失败的向量为None
+        """
+        if not self.vector_enabled:
+            return None
+            
+        try:
+            embeddings = self.embedder.encode(texts)
+            return embeddings
+        except Exception as e:
+            logging.error(f"批量文本向量化失败: {str(e)}")
+            # 尝试逐个处理
+            results = []
+            for text in texts:
+                try:
+                    results.append(self.embedder.encode([text])[0])
+                except:
+                    results.append(None)
+            return np.array([r for r in results if r is not None])
+            
+    def find_similar_sms(self, sms_text):
+        """
+        在缓存中查找相似短信
+        
+        Args:
+            sms_text: 短信文本
+            
+        Returns:
+            tuple: (缓存的结果, 相似度) 如果没有找到则为 (None, -1)
+        """
+        if not self.vector_enabled or len(self.sms_cache) == 0:
+            return None, -1
+            
+        try:
+            query_vector = self.get_embedding(sms_text)
+            if query_vector is None:
+                return None, -1
+                
+            query_vector = np.array([query_vector]).astype('float32')
+            
+            # 搜索最相似的短信
+            distances, indices = self.index.search(query_vector, 1)
+            
+            if distances[0][0] < self.similarity_threshold:
+                return self.result_cache[indices[0][0]], distances[0][0]
+            return None, -1
+        except Exception as e:
+            logging.error(f"查找相似短信失败: {str(e)}")
+            return None, -1
+    
+    def cache_result(self, sms_text, result):
+        """
+        缓存审核结果
+        
+        Args:
+            sms_text: 短信文本
+            result: 审核结果
+        """
+        if not self.vector_enabled:
+            return
+            
+        try:
+            vector = self.get_embedding(sms_text)
+            if vector is None:
+                return
+                
+            vector = np.array([vector]).astype('float32')
+            
+            self.index.add(vector)
+            self.sms_cache.append(sms_text)
+            self.result_cache.append(result)
+            
+            logging.debug(f"结果已缓存，当前缓存大小: {len(self.sms_cache)}")
+        except Exception as e:
+            logging.error(f"缓存结果失败: {str(e)}")
+            
+    
 

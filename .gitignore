@@ -9,17 +9,7 @@ __pycache__/
 env/
 venv/
 ENV/
-# 添加更多 Python 环境相关忽略
-bin/
-include/
-lib/
-lib64/
-share/
-pyvenv.cfg
-pip-log.txt
-pip-delete-this-directory.txt
-.python-version
-pythonenv*
+
 
 # IDE
 .idea/
