@@ -16,6 +16,7 @@ except ImportError:
     logging.warning("sentence-transformers或faiss库未安装，向量化功能将不可用。请使用pip install sentence-transformers faiss-cpu安装。")
 
 
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -137,7 +138,7 @@ class AIAuditor:
 
     def audit_sms(self, signature: str, content: str, business_type: str) -> Tuple[bool, Dict]:
         """
-        对单条短信进行AI审核(原始方法)
+        对单条短信进行AI审核
         
         Args:
             signature: 短信签名
@@ -148,6 +149,9 @@ class AIAuditor:
             Tuple[bool, Dict]: (是否通过审核, 审核结果详情)
         """
         try:
+            import time
+            api_start_time = time.time()
+            
             # 获取业务特定规则
             business_specific_rules = BUSINESS_SPECIFIC_RULES.get(
                 business_type, 
@@ -179,8 +183,18 @@ class AIAuditor:
                 data=json.dumps(payload)
             )
             
+            # 计算API调用耗时
+            api_time = time.time() - api_start_time
+            logging.info(f"API调用耗时: {api_time:.2f}秒")
+            
             # 处理响应
-            return self._process_api_response(response, "标准审核")
+            passed, result = self._process_api_response(response, "标准审核")
+            
+            # 将API调用时间添加到结果中
+            if isinstance(result, dict):
+                result["api_time"] = api_time
+                
+            return passed, result
 
         except Exception as e:
             logging.error(f"AI审核过程出错: {str(e)}")
@@ -204,14 +218,23 @@ class AIAuditor:
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         
+        # 记录开始时间和缓存命中计数
+        import time
+        start_time = time.time()
+        cache_hits = 0
+        
         logging.info(f"开始批量审核 {total} 条短信")   
         
         for i, sms in enumerate(sms_list):
             try:
                 # 记录进度
-                if i % 10 == 0:
-                    logging.info(f"正在处理: {i+1}/{total}")
-                    
+                if i % 10 == 0 or i == total - 1:
+                    elapsed = time.time() - start_time
+                    avg_time = elapsed / (i + 1) if i > 0 else 0
+                    eta = avg_time * (total - i - 1) if i > 0 else 0
+                    hit_rate = (cache_hits / (i + 1)) * 100 if i >= 0 else 0
+                    logging.info(f"进度: {i+1}/{total} [{hit_rate:.1f}% 缓存命中] [平均 {avg_time:.2f}秒/条] [预计剩余 {eta:.0f}秒]")
+                
                 # 优先使用缓存版本
                 if self.vector_enabled:
                     passed, details = self.audit_sms_with_cache(
@@ -219,6 +242,9 @@ class AIAuditor:
                         sms["content"], 
                         sms["business_type"]
                     )
+                    # 检查是否命中缓存
+                    if isinstance(details, dict) and details.get("cached", False):
+                        cache_hits += 1
                 else:
                     # 否则使用常规方法
                     passed, details = self.audit_sms(
@@ -245,12 +271,12 @@ class AIAuditor:
         
         # 计算缓存命中率
         if self.vector_enabled:
-            cache_hits = sum(1 for r in results if r.get("details", {}).get("cached", False))
             hit_rate = (cache_hits / total) * 100 if total > 0 else 0
             logging.info(f"缓存命中: {cache_hits}/{total} ({hit_rate:.1f}%)")
         
         # 记录总token使用情况
-        logging.info(f"批量审核完成，共处理 {len(results)} 条短信")
+        total_time = time.time() - start_time
+        logging.info(f"批量审核完成，共处理 {len(results)} 条短信，总耗时: {total_time:.2f}秒，平均每条: {total_time/len(results):.2f}秒")
         logging.info(f"总Token消耗: 输入={self.total_input_tokens}, 输出={self.total_output_tokens}, 总计={self.total_tokens_used}")
         logging.info(f"平均每条短信Token消耗: {self.total_tokens_used / len(results) if results else 0:.2f}")
         
@@ -258,7 +284,7 @@ class AIAuditor:
     
     def audit_sms_with_cache(self, signature: str, content: str, business_type: str) -> Tuple[bool, Dict]:
         """
-        使用缓存机制对单条短信进行AI审核
+        使用缓存机制对短信进行AI审核
         
         Args:
             signature: 短信签名
@@ -320,7 +346,7 @@ class AIAuditor:
             return None
             
         try:
-            return self.embedder.encode([text])[0]
+            return self.embedder.encode([text], show_progress_bar=False)[0]
         except Exception as e:
             logging.error(f"文本向量化失败: {str(e)}")
             return None
@@ -339,7 +365,7 @@ class AIAuditor:
             return None
             
         try:
-            embeddings = self.embedder.encode(texts)
+            embeddings = self.embedder.encode(texts, show_progress_bar=False)
             return embeddings
         except Exception as e:
             logging.error(f"批量文本向量化失败: {str(e)}")
@@ -347,7 +373,7 @@ class AIAuditor:
             results = []
             for text in texts:
                 try:
-                    results.append(self.embedder.encode([text])[0])
+                    results.append(self.embedder.encode([text], show_progress_bar=False)[0])
                 except:
                     results.append(None)
             return np.array([r for r in results if r is not None])
