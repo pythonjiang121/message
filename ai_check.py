@@ -6,6 +6,8 @@ from typing import Dict, Tuple, List
 import logging
 from datetime import datetime
 import re
+from openai import OpenAI
+
 
 # 配置日志
 logging.basicConfig(
@@ -22,8 +24,8 @@ class AIAuditor:
         """
         初始化AI审核器，API密钥直接在类中定义
         """
-        self.api_endpoint = "https://api.deepseek.com/v3/chat/completions"
-        self.api_key = ""  # 直接使用固定的API密钥
+        self.api_endpoint = "https://api.deepseek.com/chat/completions"
+        self.api_key = "sk-fdb5269b9e0e43aca3cf7dea21d63322"  # 直接使用固定的API密钥
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
@@ -33,9 +35,32 @@ class AIAuditor:
         self.system_prompt = """你是一个专业的短信内容审核专家，负责评估短信是否符合监管要求和行业规范。
 
 评估标准：
-2. 是否涉黄
-3. 是否涉诈
-4. 是否涉赌
+1. 链接风险：
+- 短链接或可疑域名
+- 紧急催促用语
+- 不合理时效限制
+
+2. 营销话术：
+- 诱导性词语(首批/限量等)
+- 过高金额承诺
+- 制造紧迫感
+
+3. 业务合规：
+- 威胁性通知
+- 发送方身份
+- 管制敏感产品
+
+4. 内容真实性：
+- 夸大虚假宣传
+- 迷信伪科学
+- 优惠真实性
+
+5. 违规内容：
+- 涉黄涉赌
+- 涉诈涉暴
+- 涉政涉恐
+- 涉毒涉敏感信息
+- 高回报/免费获利
 
 请以JSON格式输出你的判断：
 {
@@ -68,10 +93,37 @@ class AIAuditor:
 规则审核分数：{rule_score}
 规则审核原因：{rule_reason}
 
-请仔细评估短信内容是否符合规范，特别注意：
-2. 是否涉黄
-3. 是否涉诈
-4. 是否涉赌"""
+请仔细评估短信内容是否符合规范，重点关注以下风险点：
+
+1. 链接风险：
+- 短链接或可疑域名
+- 紧急催促用语
+- 不合理时效限制
+
+2. 营销话术：
+- 诱导性词语(首批/限量等)
+- 过高金额承诺
+- 制造紧迫感
+
+3. 业务合规：
+- 威胁性通知
+- 发送方身份
+- 管制敏感产品
+
+4. 内容真实性：
+- 夸大虚假宣传
+- 迷信伪科学
+- 优惠真实性
+
+5. 违规内容：
+- 涉黄涉赌
+- 涉诈涉暴
+- 涉政涉恐
+- 涉毒涉敏感信息
+- 高回报/免费获利
+
+请严格评估以上风险点,发现任一风险即判定不通过。
+"""
 
             # 构建请求数据
             payload = {
@@ -166,3 +218,4 @@ class AIAuditor:
         
         logging.info(f"批量审核完成，共处理 {len(results)} 条短信")
         return results
+

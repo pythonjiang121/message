@@ -9,6 +9,17 @@ __pycache__/
 env/
 venv/
 ENV/
+# 添加更多 Python 环境相关忽略
+bin/
+include/
+lib/
+lib64/
+share/
+pyvenv.cfg
+pip-log.txt
+pip-delete-this-directory.txt
+.python-version
+pythonenv*
 
 # IDE
 .idea/
@@ -28,3 +39,11 @@ Thumbs.db
 logs/
 data/
 .pytest_cache/
+# 添加可能生成的文件
+*.out
+*.json
+*.pickle
+*.npy
+output/
+results/
+runs/

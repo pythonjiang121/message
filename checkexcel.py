@@ -7,7 +7,7 @@ import re
 from collections import Counter
 from ai_check import AIAuditor
 import json
-
+import traceback
 
 class SMSChecker:
 
@@ -28,17 +28,6 @@ class SMSChecker:
 
         # 产品类型审核（包含账户类型审核）
         business_passed, business_reason = validate_business(business_type, content, signature, account_type)
-        
-        # 从操作类型中提取分数
-        try:
-            # 使用正则表达式提取分数
-            score_match = re.search(r'总分: (\d+\.?\d*)', business_reason)
-            if score_match:
-                score = float(score_match.group(1))
-                
-                
-        except Exception as e:
-            print(f"提取分数时出错: {str(e)}")
             
         results['业务审核'] = business_reason
 
@@ -85,7 +74,7 @@ def process_excel(input_file: str) -> str:
         print("\n=== 开始规则审核 ===")
         for index, row in df.iterrows():
             try:
-                # 只进行规则审核
+                # 只进行规则审核，传入String类型，而check_sms返回元祖，包含是否通过和总分及原因除存在passed, audit_results
                 passed, audit_results = checker.check_sms(
                     row['短信签名'],
                     row['短信内容'],
@@ -99,7 +88,7 @@ def process_excel(input_file: str) -> str:
                 else:
                     status = '失败'
                     code_reject_count += 1
-                    
+                # 规则审核，返回元祖，status和audit_results
                 results.append({
                     '总体操作类型': status,
                     '业务操作类型': audit_results['业务审核']
@@ -114,27 +103,15 @@ def process_excel(input_file: str) -> str:
         for key in ['总体操作类型', '业务操作类型']:
             df[key] = [result[key] for result in results]
         
-        # # 打印DataFrame的前5行，查看是否正确更新
-        # print("\n=== 查看DataFrame更新情况 ===")
-        # print("DataFrame前5行:")
-        # for i in range(min(5, len(df))):
-        #     print(f"行 {i}:")
-        #     print(f"  短信签名: {df.iloc[i]['短信签名']}")
-        #     print(f"  短信内容: {df.iloc[i]['短信内容'][:30]}...")  # 只显示前30个字符
-        #     print(f"  产品类型: {df.iloc[i]['产品类型']}")
-        #     print(f"  总体操作类型: {df.iloc[i]['总体操作类型']}")
-        #     print(f"  业务操作类型: {df.iloc[i]['业务操作类型']}")               
-        # return
     
         # 第二轮：AI审核
         print("\n=== 开始AI二次审核 ===")
         # 筛选出规则审核通过的短信
-        passed_sms = df[df['总体操作类型'] == '放行']
-        
+        passed_sms = df[df['总体操作类型'] == '放行']      
         if not passed_sms.empty:
             # 准备AI审核数据
             ai_audit_list = []
-            for _, row in passed_sms.iterrows():
+            for idx, row in passed_sms.iterrows():
                 try:
                     score = 100.0  # 默认分数
                     try:
@@ -151,33 +128,41 @@ def process_excel(input_file: str) -> str:
                         "content": row['短信内容'],
                         "business_type": row['产品类型'],
                         "rule_score": score,
-                        "rule_reason": row['业务操作类型']
+                        "rule_reason": row['业务操作类型'],
+                        "original_index": idx  # 保存原始索引
                     })
                 except Exception as e:
                     print(f"准备AI审核数据时出错: {str(e)}")
                     continue
             
-            # 进行AI审核
-            from ai_check import AIAuditor
+            # 进行AI审核,将包含短信审核字符串的字典添加到ai_audit_list这个列表中
             auditor = AIAuditor()
-            ai_results = auditor.batch_audit(ai_audit_list)
-            
+            ai_results = auditor.batch_audit(ai_audit_list)           
             # 统计AI审核结果
             ai_reject_count = 0
             
             # 更新AI审核结果
             for result in ai_results:
                 try:
-                    idx = df[df['短信签名'] == result['sms']['signature']].index[0]
-                    df.loc[idx, 'AI审核结果'] = '通过' if result['passed'] else '驳回'
-                    df.loc[idx, 'AI审核详情'] = json.dumps(result['details'], ensure_ascii=False)
+                    # 直接使用保存的原始索引
+                    idx = result['sms']['original_index']
                     
-                    # 如果AI审核驳回，更新总体操作类型
+                    # 如果AI审核驳回，更新总体操作类型并提取reasons
                     if not result['passed']:
                         df.loc[idx, '总体操作类型'] = '失败'
                         code_pass_count -= 1
                         code_reject_count += 1
                         ai_reject_count += 1
+                        
+                        # 提取reasons并去除引号
+                        if 'reasons' in result['details']:
+                            reasons = "、".join(result['details']['reasons'])
+                            # 去除可能存在的单双引号
+                            reasons = reasons.replace('"', '').replace("'", '')
+                            df.loc[idx, 'AI审核结果'] = f"AI审核失败: {reasons}"
+                        else:
+                            df.loc[idx, 'AI审核结果'] = "AI审核失败: 未提供具体原因"
+
                 except Exception as e:
                     print(f"更新审核结果时出错: {str(e)}")
             
@@ -185,13 +170,9 @@ def process_excel(input_file: str) -> str:
             print(f"AI驳回数量: {ai_reject_count} 条")
             print(f"AI驳回率: {(ai_reject_count/len(ai_audit_list)*100):.2f}%" if ai_audit_list else "0.00%")
 
-        # 将结果添加到DataFrame
-        for key in ['总体操作类型', '业务操作类型']:
-            df[key] = [result[key] for result in results]
-        
         # 生成输出文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"操作类型_{timestamp}.xlsx"
+        output_file = f"漏杀AI审核_{timestamp}.xlsx"
         
         # 保存结果
         df.to_excel(output_file, index=False, engine='openpyxl')
@@ -212,7 +193,7 @@ def process_excel(input_file: str) -> str:
         print(f"代码失败率: {rejection_rate:.2f}%")
         
         # 匹配统计（
-        df_for_matching = df[df['总体操作类型'] ]
+        df_for_matching = df[df['总体操作类型'].isin(['放行', '失败'])]
         # 只统计代码和人工结果都为放行或失败的情况
         matched_count = len(df_for_matching[
             ((df_for_matching['总体操作类型'] == '放行') & (df_for_matching['操作类型'] == '放行')) |
@@ -235,7 +216,6 @@ def process_excel(input_file: str) -> str:
         return output_file
         
     except Exception as e:
-        import traceback
         print(f"处理文件时出错: {str(e)}")
         print(f"错误详情:\n{traceback.format_exc()}")
         raise
@@ -244,7 +224,7 @@ def main():
     """主函数"""
     try:
         import sys
-        input_file = sys.argv[1] if len(sys.argv) > 1 else "3月审核记录.xlsx"
+        input_file = sys.argv[1] if len(sys.argv) > 1 else "324漏杀.xlsx"
         
         if not os.path.exists(input_file):
             print(f"错误: 输入文件 '{input_file}' 不存在")
