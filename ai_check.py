@@ -5,16 +5,8 @@ import logging
 import re
 import numpy as np
 from ai_audit_prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE, BUSINESS_SPECIFIC_RULES
-
-# 添加向量化相关的导入
-try:
-    from sentence_transformers import SentenceTransformer
-    import faiss
-    VECTOR_ENABLED = True
-except ImportError:
-    VECTOR_ENABLED = False
-    logging.warning("sentence-transformers或faiss库未安装，向量化功能将不可用。请使用pip install sentence-transformers faiss-cpu安装。")
-
+from sentence_transformers import SentenceTransformer
+import faiss
 
 
 # 配置日志
@@ -47,22 +39,35 @@ class AIAuditor:
         self.total_output_tokens = 0
         
         # 向量化和缓存相关设置
-        self.vector_enabled = VECTOR_ENABLED
+        self.vector_enabled = True
         if self.vector_enabled:
             # 初始化文本向量化模型
             try:
-                self.embedder = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-                self.vector_dim = 384  # 根据使用的模型调整
+                # 模型参数设置
+                self.model_name = 'BAAI/bge-small-zh-v1.5'  # 更改为你要使用的模型
+                self.normalize_vectors = True  # BAAI模型推荐归一化向量
+                
+                logging.info(f"正在加载模型: {self.model_name}")
+                self.embedder = SentenceTransformer(self.model_name)
+                
+                # 通过测试获取实际向量维度
+                test_text = "测试文本"
+                test_vector = self.embedder.encode([test_text], show_progress_bar=False)[0]
+                self.vector_dim = test_vector.shape[0]
+                logging.info(f"成功加载模型: {self.model_name}, 向量维度: {self.vector_dim}")
+                
                 # 初始化向量索引
                 self.index = faiss.IndexFlatL2(self.vector_dim)
+                
                 # 初始化缓存
                 self.sms_cache = []  # 存储短信文本
                 self.result_cache = []  # 存储对应审核结果
-                self.similarity_threshold = 0.85  # 相似度阈值
+                self.similarity_threshold = 0.45  # 相似度阈值
                 logging.info("向量化和缓存功能已初始化")
             except Exception as e:
+                import traceback
                 self.vector_enabled = False
-                logging.error(f"向量化功能初始化失败: {str(e)}")
+                logging.error(f"向量化功能初始化失败: {str(e)}\n{traceback.format_exc()}")
         else:
             logging.info("向量化功能未启用，将使用常规审核方法")
 
@@ -346,9 +351,23 @@ class AIAuditor:
             return None
             
         try:
-            return self.embedder.encode([text], show_progress_bar=False)[0]
+            # 获取向量
+            vector = self.embedder.encode([text], show_progress_bar=False)[0]
+            
+            # 检查向量的形状和类型
+            logging.debug(f"获取到向量: shape={vector.shape}, dtype={vector.dtype}")
+            
+            # BAAI模型可能需要的额外处理（如归一化）
+            # 某些BAAI模型推荐对向量进行归一化处理，提高结果质量
+            vector_norm = np.linalg.norm(vector)
+            if vector_norm > 0:
+                vector = vector / vector_norm
+                logging.debug("向量已归一化")
+            
+            return vector
         except Exception as e:
-            logging.error(f"文本向量化失败: {str(e)}")
+            import traceback
+            logging.error(f"文本向量化失败: {str(e)}\n{traceback.format_exc()}")
             return None
     
     def batch_get_embeddings(self, texts):
@@ -365,18 +384,41 @@ class AIAuditor:
             return None
             
         try:
+            # 批量获取向量
             embeddings = self.embedder.encode(texts, show_progress_bar=False)
+            
+            # 检查向量形状
+            logging.debug(f"批量获取向量: count={len(texts)}, shape={embeddings.shape}, dtype={embeddings.dtype}")
+            
+            # 如果启用了归一化，对所有向量进行归一化处理
+            if hasattr(self, 'normalize_vectors') and self.normalize_vectors:
+                # 计算每个向量的模长
+                norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+                # 只归一化非零向量
+                non_zero_norm_indices = norms.flatten() > 0
+                embeddings[non_zero_norm_indices] = embeddings[non_zero_norm_indices] / norms[non_zero_norm_indices]
+                logging.debug("批量向量已归一化")
+            
             return embeddings
         except Exception as e:
-            logging.error(f"批量文本向量化失败: {str(e)}")
+            import traceback
+            logging.error(f"批量文本向量化失败: {str(e)}\n{traceback.format_exc()}")
             # 尝试逐个处理
             results = []
             for text in texts:
                 try:
-                    results.append(self.embedder.encode([text], show_progress_bar=False)[0])
-                except:
+                    vec = self.get_embedding(text)  # 使用单个处理函数，确保一致性
+                    if vec is not None:
+                        results.append(vec)
+                    else:
+                        logging.warning(f"单条文本向量化失败: {text[:30]}...")
+                except Exception as ex:
+                    logging.warning(f"单条文本向量化出错: {str(ex)}")
                     results.append(None)
-            return np.array([r for r in results if r is not None])
+                
+            if results:
+                return np.array([r for r in results if r is not None])
+            return np.array([])
             
     def find_similar_sms(self, sms_text):
         """
@@ -394,18 +436,34 @@ class AIAuditor:
         try:
             query_vector = self.get_embedding(sms_text)
             if query_vector is None:
+                logging.warning("无法搜索相似短信：向量为None")
                 return None, -1
                 
-            query_vector = np.array([query_vector]).astype('float32')
+            # 确保向量是正确的形状和类型
+            query_vector = np.array([query_vector], dtype=np.float32)
+            
+            logging.debug(f"搜索向量形状: {query_vector.shape}, 索引大小: {self.index.ntotal}")
             
             # 搜索最相似的短信
             distances, indices = self.index.search(query_vector, 1)
             
-            if distances[0][0] < self.similarity_threshold:
-                return self.result_cache[indices[0][0]], distances[0][0]
+            if len(indices) > 0 and len(indices[0]) > 0:
+                best_idx = indices[0][0]
+                distance = distances[0][0]
+                logging.debug(f"找到最佳匹配: idx={best_idx}, distance={distance}, threshold={self.similarity_threshold}")
+                
+                if distance < self.similarity_threshold:
+                    if 0 <= best_idx < len(self.result_cache):
+                        return self.result_cache[best_idx], distance
+                    else:
+                        logging.warning(f"索引越界: {best_idx} 不在结果缓存范围内 (0-{len(self.result_cache)-1})")
+                else:
+                    logging.debug(f"相似度不足: {distance} > {self.similarity_threshold}")
+                
             return None, -1
         except Exception as e:
-            logging.error(f"查找相似短信失败: {str(e)}")
+            import traceback
+            logging.error(f"查找相似短信失败: {str(e)}\n{traceback.format_exc()}")
             return None, -1
     
     def cache_result(self, sms_text, result):
@@ -422,17 +480,27 @@ class AIAuditor:
         try:
             vector = self.get_embedding(sms_text)
             if vector is None:
+                logging.warning("无法缓存结果：向量为None")
                 return
-                
-            vector = np.array([vector]).astype('float32')
             
+            # 打印向量信息用于调试
+            logging.debug(f"向量类型: {type(vector)}, 形状: {vector.shape}, 维度: {self.vector_dim}")
+            
+            # 确保向量是正确的形状和类型
+            vector = np.array([vector], dtype=np.float32)
+            
+            # 打印转换后的向量信息
+            logging.debug(f"处理后向量形状: {vector.shape}, dtype: {vector.dtype}")
+            
+            # 添加到FAISS索引中
             self.index.add(vector)
             self.sms_cache.append(sms_text)
             self.result_cache.append(result)
             
             logging.debug(f"结果已缓存，当前缓存大小: {len(self.sms_cache)}")
         except Exception as e:
-            logging.error(f"缓存结果失败: {str(e)}")
+            import traceback
+            logging.error(f"缓存结果失败: {str(e)}\n{traceback.format_exc()}")
             
     
 
