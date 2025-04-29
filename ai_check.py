@@ -154,6 +154,18 @@ class AIAuditor:
             Tuple[bool, Dict]: (是否通过审核, 审核结果详情)
         """
         try:
+            # 首先进行中括号检测
+            left_brackets = content.count('【')
+            right_brackets = content.count('】')
+            if left_brackets > 1 or right_brackets > 1:
+                return False, {
+                    "should_pass": False,
+                    "risk_areas": ["多重签名"],
+                    "reasons": ["短信内容中包含多个中文中括号，不符合规范"],
+                    "token_usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+                    "api_time": 0
+                }
+                
             import time
             api_start_time = time.time()
             
@@ -289,7 +301,7 @@ class AIAuditor:
     
     def audit_sms_with_cache(self, signature: str, content: str, business_type: str) -> Tuple[bool, Dict]:
         """
-        使用缓存机制对短信进行AI审核
+        带缓存的短信AI审核
         
         Args:
             signature: 短信签名
@@ -299,42 +311,56 @@ class AIAuditor:
         Returns:
             Tuple[bool, Dict]: (是否通过审核, 审核结果详情)
         """
-        # 构建完整的短信文本用于相似度比较
-        sms_text = f"{signature} {content} {business_type}"
-        
-        # 如果向量化功能启用，尝试从缓存获取结果
-        if self.vector_enabled:
-            try:
-                cached_result, similarity = self.find_similar_sms(sms_text)
-                
-                if cached_result:
-                    logging.info(f"从缓存获取结果，相似度: {similarity:.4f}")
+        try:
+            # 首先进行中括号检测
+            left_brackets = content.count('【')
+            right_brackets = content.count('】')
+            if left_brackets > 1 or right_brackets > 1:
+                return False, {
+                    "should_pass": False,
+                    "risk_areas": ["多重签名"],
+                    "reasons": ["短信内容中包含多个中文中括号，不符合规范"],
+                    "token_usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+                    "api_time": 0,
+                    "from_cache": False
+                }
+
+            # 检查是否命中缓存
+            if self.vector_enabled:
+                try:
+                    cached_result, similarity = self.find_similar_sms(f"{signature} {content} {business_type}")
                     
-                    # 添加缓存标记到结果中
-                    result_copy = cached_result.copy()
-                    if "details" in result_copy and isinstance(result_copy["details"], dict):
-                        if "cached" not in result_copy["details"]:
-                            result_copy["details"]["cached"] = True
-                            result_copy["details"]["similarity_score"] = float(similarity)
-                    
-                    return result_copy["passed"], result_copy["details"]
-            except Exception as e:
-                logging.warning(f"从缓存获取结果失败: {str(e)}，将直接调用API")
-        
-        # 没有缓存命中或缓存检索出错，调用API审核
-        passed, result = self.audit_sms(signature, content, business_type)
-        
-        # 如果向量化功能启用，缓存结果
-        if self.vector_enabled:
-            try:
-                self.cache_result(sms_text, {
-                    "passed": passed,
-                    "details": result
-                })
-            except Exception as e:
-                logging.warning(f"缓存结果失败: {str(e)}")
-        
-        return passed, result
+                    if cached_result:
+                        logging.info(f"从缓存获取结果，相似度: {similarity:.4f}")
+                        
+                        # 添加缓存标记到结果中
+                        result_copy = cached_result.copy()
+                        if "details" in result_copy and isinstance(result_copy["details"], dict):
+                            if "cached" not in result_copy["details"]:
+                                result_copy["details"]["cached"] = True
+                                result_copy["details"]["similarity_score"] = float(similarity)
+                        
+                        return result_copy["passed"], result_copy["details"]
+                except Exception as e:
+                    logging.warning(f"从缓存获取结果失败: {str(e)}，将直接调用API")
+            
+            # 没有缓存命中或缓存检索出错，调用API审核
+            passed, result = self.audit_sms(signature, content, business_type)
+            
+            # 如果向量化功能启用，缓存结果
+            if self.vector_enabled:
+                try:
+                    self.cache_result(f"{signature} {content} {business_type}", {
+                        "passed": passed,
+                        "details": result
+                    })
+                except Exception as e:
+                    logging.warning(f"缓存结果失败: {str(e)}")
+            
+            return passed, result
+        except Exception as e:
+            logging.error(f"带缓存的短信AI审核失败: {str(e)}")
+            return False, {"error": str(e)}
     
 
     def get_embedding(self, text):

@@ -47,18 +47,18 @@ def test_single_sms():
         print(f"失败原因: {', '.join(details.get('reasons', []))}")
 
 
-def test_csv_batch(sample_size=None):
+def test_csv_batch():
     """测试批量CSV文件处理"""
     # 读取Excel文件
     try:
-        df = pd.read_excel("3月审核记录.xlsx")
+        df = pd.read_excel("AI审核结果_20250428_122359.xlsx", sheet_name="Sheet2")
     except Exception as e:
         print(f"读取Excel文件失败: {str(e)}")
         return
     
-    # 如果指定了样本大小，随机抽样
-    if sample_size and sample_size < len(df):
-        df = df.sample(n=sample_size, random_state=42)
+    # # 如果指定了样本大小，随机抽样
+    # if sample_size and sample_size < len(df):
+    #     df = df.sample(n=sample_size, random_state=42)
         
     print(f"读取Excel文件成功，处理{len(df)}条记录")
     
@@ -169,6 +169,6 @@ def test_csv_batch(sample_size=None):
     print(f"\n审核结果已保存至: {output_file}")
 
 if __name__ == "__main__":
-        sample_size = int(input("请输入测试样本大小 "))
-        test_csv_batch(sample_size=sample_size)
+    # sample_size = int(input("请输入测试样本大小 "))
+    test_csv_batch()
 
