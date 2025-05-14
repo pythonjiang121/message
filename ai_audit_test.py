@@ -51,7 +51,7 @@ def test_csv_batch():
     """测试批量CSV文件处理"""
     # 读取Excel文件
     try:
-        df = pd.read_excel("AI审核结果_20250428_122359.xlsx", sheet_name="Sheet2")
+        df = pd.read_excel("3月审核记录.xlsx")
     except Exception as e:
         print(f"读取Excel文件失败: {str(e)}")
         return

@@ -62,7 +62,7 @@ class AIAuditor:
                 # 初始化缓存
                 self.sms_cache = []  # 存储短信文本
                 self.result_cache = []  # 存储对应审核结果
-                self.similarity_threshold = 0.45  # 相似度阈值
+                self.similarity_threshold = 0.4  # 相似度阈值
                 logging.info("向量化和缓存功能已初始化")
             except Exception as e:
                 import traceback
@@ -154,18 +154,7 @@ class AIAuditor:
             Tuple[bool, Dict]: (是否通过审核, 审核结果详情)
         """
         try:
-            # 首先进行中括号检测
-            left_brackets = content.count('【')
-            right_brackets = content.count('】')
-            if left_brackets > 1 or right_brackets > 1:
-                return False, {
-                    "should_pass": False,
-                    "risk_areas": ["多重签名"],
-                    "reasons": ["短信内容中包含多个中文中括号，不符合规范"],
-                    "token_usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
-                    "api_time": 0
-                }
-                
+
             import time
             api_start_time = time.time()
             
@@ -228,7 +217,7 @@ class AIAuditor:
             List[Dict]: 审核结果列表，每个元素包含 sms, passed, details
         """
         results = []
-        total = len(sms_list)
+        cache_hits = 0
         
         # 重置token计数器
         self.total_tokens_used = 0
@@ -238,37 +227,30 @@ class AIAuditor:
         # 记录开始时间和缓存命中计数
         import time
         start_time = time.time()
-        cache_hits = 0
         
-        logging.info(f"开始批量审核 {total} 条短信")   
+        logging.info(f"开始批量审核 {len(sms_list)} 条短信")   
         
         for i, sms in enumerate(sms_list):
             try:
                 # 记录进度
-                if i % 10 == 0 or i == total - 1:
+                if i % 10 == 0 or i == len(sms_list) - 1:
                     elapsed = time.time() - start_time
                     avg_time = elapsed / (i + 1) if i > 0 else 0
-                    eta = avg_time * (total - i - 1) if i > 0 else 0
+                    eta = avg_time * (len(sms_list) - i - 1) if i > 0 else 0
                     hit_rate = (cache_hits / (i + 1)) * 100 if i >= 0 else 0
-                    logging.info(f"进度: {i+1}/{total} [{hit_rate:.1f}% 缓存命中] [平均 {avg_time:.2f}秒/条] [预计剩余 {eta:.0f}秒]")
+                    logging.info(f"进度: {i+1}/{len(sms_list)} [{hit_rate:.1f}% 缓存命中] [平均 {avg_time:.2f}秒/条] [预计剩余 {eta:.0f}秒]")
                 
-                # 优先使用缓存版本
-                if self.vector_enabled:
-                    passed, details = self.audit_sms_with_cache(
-                        sms["signature"], 
-                        sms["content"], 
-                        sms["business_type"]
-                    )
-                    # 检查是否命中缓存
-                    if isinstance(details, dict) and details.get("cached", False):
-                        cache_hits += 1
-                else:
-                    # 否则使用常规方法
-                    passed, details = self.audit_sms(
-                        sms["signature"], 
-                        sms["content"], 
-                        sms["business_type"]
-                    )
+                # 不论是否启用向量化，都调用audit_sms_with_cache
+                # 该方法内部会处理是否使用缓存的逻辑
+                passed, details = self.audit_sms_with_cache(
+                    sms["signature"], 
+                    sms["content"], 
+                    sms["business_type"]
+                )
+                
+                # 检查是否命中缓存(仅用于统计)
+                if isinstance(details, dict) and details.get("cached", False):
+                    cache_hits += 1
                 
                 # 添加结果
                 results.append({
@@ -288,8 +270,8 @@ class AIAuditor:
         
         # 计算缓存命中率
         if self.vector_enabled:
-            hit_rate = (cache_hits / total) * 100 if total > 0 else 0
-            logging.info(f"缓存命中: {cache_hits}/{total} ({hit_rate:.1f}%)")
+            hit_rate = (cache_hits / len(sms_list)) * 100 if len(sms_list) > 0 else 0
+            logging.info(f"缓存命中: {cache_hits}/{len(sms_list)} ({hit_rate:.1f}%)")
         
         # 记录总token使用情况
         total_time = time.time() - start_time
@@ -396,55 +378,6 @@ class AIAuditor:
             logging.error(f"文本向量化失败: {str(e)}\n{traceback.format_exc()}")
             return None
     
-    def batch_get_embeddings(self, texts):
-        """
-        批量获取文本向量
-        
-        Args:
-            texts: 要向量化的文本列表
-            
-        Returns:
-            numpy.ndarray: 文本向量数组，失败的向量为None
-        """
-        if not self.vector_enabled:
-            return None
-            
-        try:
-            # 批量获取向量
-            embeddings = self.embedder.encode(texts, show_progress_bar=False)
-            
-            # 检查向量形状
-            logging.debug(f"批量获取向量: count={len(texts)}, shape={embeddings.shape}, dtype={embeddings.dtype}")
-            
-            # 如果启用了归一化，对所有向量进行归一化处理
-            if hasattr(self, 'normalize_vectors') and self.normalize_vectors:
-                # 计算每个向量的模长
-                norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-                # 只归一化非零向量
-                non_zero_norm_indices = norms.flatten() > 0
-                embeddings[non_zero_norm_indices] = embeddings[non_zero_norm_indices] / norms[non_zero_norm_indices]
-                logging.debug("批量向量已归一化")
-            
-            return embeddings
-        except Exception as e:
-            import traceback
-            logging.error(f"批量文本向量化失败: {str(e)}\n{traceback.format_exc()}")
-            # 尝试逐个处理
-            results = []
-            for text in texts:
-                try:
-                    vec = self.get_embedding(text)  # 使用单个处理函数，确保一致性
-                    if vec is not None:
-                        results.append(vec)
-                    else:
-                        logging.warning(f"单条文本向量化失败: {text[:30]}...")
-                except Exception as ex:
-                    logging.warning(f"单条文本向量化出错: {str(ex)}")
-                    results.append(None)
-                
-            if results:
-                return np.array([r for r in results if r is not None])
-            return np.array([])
             
     def find_similar_sms(self, sms_text):
         """

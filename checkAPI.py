@@ -1,4 +1,4 @@
-from 规则审核.business import validate_business
+from rulescheck.business import validate_business
 from typing import Dict, List, Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
