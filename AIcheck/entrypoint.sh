@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 set -e
 
 # 打印欢迎信息
@@ -11,6 +11,6 @@ echo
 # 创建日志目录
 mkdir -p /app/logs
 
-# 运行 API 服务
-echo "以API服务模式运行 (checkAPI.py)..."
+# 启动API服务
+echo "Starting SMS Audit API service..."
 exec python checkAPI.py 

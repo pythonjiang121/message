@@ -6,6 +6,7 @@
 .venv
 venv
 env
+sms_check_env
 
 # Python缓存
 __pycache__/

@@ -9,6 +9,7 @@ __pycache__/
 env/
 venv/
 ENV/
+sms_check_env/
 
 
 # IDE

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 # 定义颜色
 GREEN='\033[0;32m'
