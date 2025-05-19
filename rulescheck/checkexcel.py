@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 import re
 from collections import Counter
-from ai_check import AIAuditor
+from AIcheck.ai_check import AIAuditor
 import json
 import traceback
 

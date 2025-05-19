@@ -2,7 +2,7 @@ import time
 import json
 import pandas as pd
 from datetime import datetime
-from ai_check import AIAuditor
+from AIcheck.ai_check import AIAuditor
 
 def test_single_sms():
     """测试单条短信AI审核"""

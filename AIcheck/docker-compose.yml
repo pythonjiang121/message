@@ -1,24 +1,29 @@
+version: '3'
+
 name: sms-audit-system
 
 services:
   
   # API服务模式
   sms-audit-api:
-    image: sms-audit
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: sms-audit-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
     volumes:
-      - /etc/localtime:/etc/localtime:ro
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./sms_data.db:/app/sms_data.db
-    ports:
-      - "5001:8000"
     environment:
       - TZ=Asia/Shanghai
-      - RUN_MODE=api
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
     tty: true
-    restart: no
     profiles:
       - api
 

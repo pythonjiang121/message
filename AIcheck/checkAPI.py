@@ -1,16 +1,15 @@
-from rulescheck.business import validate_business
 from typing import Dict, List, Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import re
 import uvicorn
+from AIcheck.ai_check import AIAuditor
 
 # 定义 Pydantic 模型
 class SMSRequest(BaseModel):
     signature: str
     content: str
     business_type: str
-    account_type: str
+    account_type: str  # 保留此字段以维持API兼容性
 
 class SMSResponse(BaseModel):
     passed: Optional[bool]
@@ -26,6 +25,10 @@ class BatchSMSResponse(BaseModel):
     statistics: Dict[str, int]
 
 class SMSChecker:
+    def __init__(self):
+        # 初始化AI审核器
+        self.ai_auditor = AIAuditor()
+        
     def check_sms(self, signature: str, content: str, business_type: str, account_type: str) -> SMSResponse:
         """
         审核单条短信
@@ -34,36 +37,30 @@ class SMSChecker:
             signature: 短信签名
             content: 短信内容
             business_type: 业务类型
-            account_type: 客户类型
+            account_type: 客户类型（AI审核中暂不使用）
             
         Returns:
             SMSResponse: 审核结果响应对象
         """
-        # 业务类型审核（包含客户类型审核）
-        business_passed, business_reason = validate_business(business_type, content, signature, account_type)
+        # 调用AI审核方法
+        passed, details = self.ai_auditor.audit_sms_with_cache(signature, content, business_type)
+        
+        # 构建原因说明
+        if not passed and "reasons" in details:
+            business_reason = "; ".join(details["reasons"])
+        elif not passed and "error" in details:
+            business_reason = f"审核错误: {details['error']}"
+        else:
+            business_reason = "内容符合规范"
         
         # 初始化响应对象
         response = SMSResponse(
-            passed=business_passed, 
-            status="通过" if business_passed else "驳回",
+            passed=passed, 
+            status="通过" if passed else "驳回",
             business_reason=business_reason,
             score=None
         )
-        
-        # 从审核结果中提取分数
-        try:
-            # 使用正则表达式提取分数
-            score_match = re.search(r'总分: (\d+\.?\d*)', business_reason)
-            if not score_match:
-                score_match = re.search(r'最终得分: (\d+\.?\d*)', business_reason)
-                
-            if score_match:
-                score = float(score_match.group(1))
-                response.score = score
-                
-        except Exception as e:
-            print(f"提取分数时出错: {str(e)}")
-            
+
         return response
 
 # 创建 FastAPI 应用
@@ -102,39 +99,6 @@ async def check_batch_sms(request: BatchSMSRequest):
     checker = SMSChecker()
     results = []
     
-    # 统计计数器
-    passed_count = 0
-    rejected_count = 0
-    manual_count = 0
-    
-    for sms in request.sms_list:
-        result = checker.check_sms(
-            sms.signature,
-            sms.content,
-            sms.business_type,
-            sms.account_type
-        )
-        
-        # 统计结果
-        if result.passed is None:
-            manual_count += 1
-        elif result.passed:
-            passed_count += 1
-        else:
-            rejected_count += 1
-            
-        results.append(result)
-    
-    # 返回批量结果和统计数据
-    return BatchSMSResponse(
-        results=results,
-        statistics={
-            "total": len(results),
-            "passed": passed_count,
-            "rejected": rejected_count,
-            "manual_review": manual_count
-        }
-    )
 
 # 如果直接运行该文件，启动 API 服务器
 if __name__ == "__main__":

@@ -8,6 +8,9 @@ echo "============================================="
 echo "启动时间: $(date)"
 echo
 
+# 创建日志目录
+mkdir -p /app/logs
+
 # 运行 API 服务
 echo "以API服务模式运行 (checkAPI.py)..."
 exec python checkAPI.py 
