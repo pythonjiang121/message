@@ -17,9 +17,9 @@ PYTHON_VERSION=$(python3 --version | cut -d " " -f 2)
 echo -e "当前Python版本: ${GREEN}$PYTHON_VERSION${NC}"
 
 # 创建虚拟环境（如果不存在）
-if [ ! -d "../sms_check_env" ]; then
+if [ ! -d " ./sms_check_env" ]; then
     echo -e "${YELLOW}创建虚拟环境...${NC}"
-    python3 -m venv ../sms_check_env
+    python3 -m venv ./sms_check_env
     echo -e "${GREEN}虚拟环境已创建${NC}"
 else
     echo -e "${GREEN}虚拟环境已存在${NC}"
@@ -27,7 +27,7 @@ fi
 
 # 激活虚拟环境
 echo -e "${YELLOW}激活虚拟环境...${NC}"
-source ../sms_check_env/bin/activate
+source ./sms_check_env/bin/activate
 
 # 升级pip
 echo -e "${YELLOW}升级pip...${NC}"
@@ -51,12 +51,12 @@ fi
 
 # 创建必要的目录
 echo -e "${YELLOW}创建必要的目录...${NC}"
-mkdir -p ../data ../logs
+mkdir -p ./data ./logs
 
 echo -e "${GREEN}====================================${NC}"
 echo -e "${GREEN}   环境设置完成!   ${NC}"
 echo -e "${GREEN}====================================${NC}"
 echo -e "使用方式:"
-echo -e "1. 激活环境: ${YELLOW}source ../sms_check_env/bin/activate${NC}"
+echo -e "1. 激活环境: ${YELLOW}source ./sms_check_env/bin/activate${NC}"
 echo -e "2. 运行API: ${YELLOW}python checkAPI.py${NC}"
 echo -e "3. 运行测试: ${YELLOW}pytest${NC}" 
