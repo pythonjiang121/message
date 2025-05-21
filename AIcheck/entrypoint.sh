@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 set -e
 
 # 打印欢迎信息

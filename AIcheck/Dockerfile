@@ -2,14 +2,6 @@ FROM hub.n2m.cn/library/python:3.10-slim
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list && \
-apt-get update && apt-get install -y --no-install-recommends \
-build-essential \
-zsh \
-&& apt-get clean \
-&& rm -rf /var/lib/apt/lists/*
-
 # 复制依赖文件和安装脚本
 COPY requirements.txt install_deps.sh entrypoint.sh ./
 
