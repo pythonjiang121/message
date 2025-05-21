@@ -3,10 +3,10 @@ import json
 from typing import Dict, Tuple, List
 import logging
 import re
-import numpy as np
+# import numpy as np
 from ai_audit_prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE, BUSINESS_SPECIFIC_RULES
 # from sentence_transformers import SentenceTransformer
-import faiss
+# import faiss
 
 
 # 配置日志

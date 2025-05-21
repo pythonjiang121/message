@@ -1,5 +1,4 @@
-FROM python:3.10-slim
-
+FROM hub.n2m.cn/library/python:3.10-slim
 # 设置工作目录
 WORKDIR /app
 
@@ -11,13 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件和安装脚本
-COPY requirements.txt install_deps.sh ./
+COPY requirements.txt install_deps.sh entrypoint.sh ./
 
-# 添加执行权限并运行安装脚本（使用清华源安装依赖）
-RUN chmod +x install_deps.sh && sed -i 's/pip install --no-cache-dir -r requirements.txt/pip install --no-cache-dir -r requirements.txt -i https:\/\/pypi.tuna.tsinghua.edu.cn\/simple/g' install_deps.sh && ./install_deps.sh
+# 添加执行权限并运行安装脚本
+RUN chmod +x install_deps.sh && ./install_deps.sh
 
 # 复制应用代码
-COPY . .
+COPY checkAPI.py ai_check.py ai_audit_prompt.py ./
 
 # 创建日志和数据目录
 RUN mkdir -p logs data
