@@ -13,8 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 复制依赖文件和安装脚本
 COPY requirements.txt install_deps.sh ./
 
-# 添加执行权限并运行安装脚本
-RUN chmod +x install_deps.sh && ./install_deps.sh
+# 添加执行权限并运行安装脚本（使用清华源安装依赖）
+RUN chmod +x install_deps.sh && sed -i 's/pip install --no-cache-dir -r requirements.txt/pip install --no-cache-dir -r requirements.txt -i https:\/\/pypi.tuna.tsinghua.edu.cn\/simple/g' install_deps.sh && ./install_deps.sh
 
 # 复制应用代码
 COPY . .
@@ -30,4 +30,6 @@ ENV SHELL=/bin/zsh
 ENTRYPOINT ["/app/entrypoint.sh"]
 
 # 暴露端口
-EXPOSE 8000 
+EXPOSE 8000
+
+RUN chmod +x /app/entrypoint.sh 

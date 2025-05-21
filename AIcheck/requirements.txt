@@ -1,22 +1,9 @@
 # 核心依赖 - 运行时必需
-sentence-transformers==2.2.2
-faiss-cpu==1.7.4
-torch==2.7.0
-pandas==1.5.3
-numpy>=2.0.0
+# API和网络请求
 fastapi==0.68.2
 uvicorn==0.15.0
-python-dotenv==0.19.2
 requests==2.26.0
-SQLAlchemy==1.4.41
-openpyxl==3.0.10
-cpca==0.3.0
-jieba==0.42.1
-zhconv==1.4.3
-matplotlib==3.5.3
-seaborn==0.11.2
-tqdm==4.65.0
+pydantic>=1.8.0
 
-# 开发工具
-pytest==7.0.1
-setuptools==42.0.2
+
+
