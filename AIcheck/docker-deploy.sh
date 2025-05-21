@@ -12,7 +12,7 @@ echo -e "${GREEN}   SMS Check API 部署脚本   ${NC}"
 echo -e "${GREEN}====================================${NC}"
 
 # 检查Docker是否安装
-if ! command -v docker &> /dev/null; then
+if ! command -v sudo docker &> /dev/null; then
     echo -e "${RED}错误: Docker未安装，请先安装Docker${NC}"
     exit 1
 fi
@@ -27,12 +27,12 @@ mkdir -p data logs
 
 # 停止并移除现有容器
 echo -e "${YELLOW}停止并移除现有容器...${NC}"
-docker stop $CONTAINER_NAME 2>/dev/null || true
-docker rm $CONTAINER_NAME 2>/dev/null || true
+sudo docker stop $CONTAINER_NAME 2>/dev/null || true
+sudo docker rm $CONTAINER_NAME 2>/dev/null || true
 
 # 构建新镜像
 echo -e "${YELLOW}构建Docker镜像...${NC}"
-docker build -t $IMAGE_NAME .
+sudo docker build -t $IMAGE_NAME .
 
 # 检查构建是否成功
 if [ $? -ne 0 ]; then
@@ -42,7 +42,7 @@ fi
 
 # 启动服务
 echo -e "${YELLOW}启动服务...${NC}"
-docker run -d --name $CONTAINER_NAME \
+sudo docker run -d --name $CONTAINER_NAME \
     -p 8000:8000 \
     -v "$(pwd)/data:/app/data" \
     -v "$(pwd)/logs:/app/logs" \
@@ -69,6 +69,6 @@ if [ $? -eq 0 ]; then
     fi
 else
     echo -e "${RED}服务启动失败，请检查日志${NC}"
-    docker logs $CONTAINER_NAME 2>/dev/null || echo "无法获取容器日志"
+    sudo docker logs $CONTAINER_NAME 2>/dev/null || echo "无法获取容器日志"
     exit 1
 fi 
