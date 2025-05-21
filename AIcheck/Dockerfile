@@ -3,10 +3,17 @@ FROM hub.n2m.cn/library/python:3.10-slim
 WORKDIR /app
 
 # 复制依赖文件和安装脚本
-COPY requirements.txt install_deps.sh entrypoint.sh ./
+COPY requirements.txt entrypoint.sh ./
 
-# 添加执行权限并运行安装脚本
-RUN chmod +x install_deps.sh && ./install_deps.sh
+# 使用清华镜像源安装 Python 依赖
+# RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple/ -r requirements.txt
+
+# 使用阿里云镜像源安装 Python 依赖
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
+
+#正常安装依赖
+# RUN pip install --no-cache-dir -r requirements.txt
+
 
 # 复制应用代码
 COPY checkAPI.py ai_check.py ai_audit_prompt.py ./

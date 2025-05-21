@@ -1,9 +1,8 @@
-# 核心依赖 - 运行时必需
 # API和网络请求
-fastapi==0.68.2
-uvicorn==0.15.0
-requests==2.26.0
-pydantic>=1.8.0
+fastapi
+uvicorn
+requests
+pydantic
 
 
 
