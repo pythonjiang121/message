@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash 
 # 定义颜色
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'

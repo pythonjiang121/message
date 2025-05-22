@@ -1,8 +1,10 @@
+import asyncio
 from typing import Dict, List, Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
 from ai_check import AIAuditor
+from loguru import logger
 
 # 定义 Pydantic 模型
 class SMSRequest(BaseModel):
@@ -75,13 +77,27 @@ async def checkAPI_single_sms(request: SMSRequest):
     """
     审核单条短信内容
     """
+    logger.info(f"开始审核单条短信: {request.signature} - {request.content}")
     checker = SMSChecker()
-    result = checker.check_sms(
-        request.signature,
-        request.content,
-        request.business_type
-    )
-    return result
+    # 同步运行
+    # result = checker.check_sms(
+    #     request.signature,
+    #     request.content,
+    #     request.business_type
+    # )
+    # 异步运行
+    try:
+        result = await asyncio.to_thread(
+            checker.check_sms,
+            request.signature,
+            request.content,
+            request.business_type
+        )
+        logger.info(f"审核结果: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"审核过程中发生错误: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # @app.post("/api/v1/batch-check", response_model=BatchSMSResponse)
 # async def check_batch_sms(request: BatchSMSRequest):
