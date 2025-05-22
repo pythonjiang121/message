@@ -1,9 +1,4 @@
-version: '3'
-
-
-
 services:
-
   # API服务模式
   sms-audit-api:
     build:
@@ -26,7 +21,6 @@ services:
     tty: true
     profiles:
       - api
-
 
 # volumes:
 #   postgres-data: 
