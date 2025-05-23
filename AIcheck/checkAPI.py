@@ -173,7 +173,7 @@ async def checkAPI_single_sms(request: SMSRequest, request_info: Request):
             while True:
                 await asyncio.sleep(1)
                 # 如果客户端已断开连接，则取消审核任务
-                if not request_info.client or getattr(request_info.client, 'disconnected', False):
+                if not request_info.client or await request_info.is_disconnected():
                     logger.warning(f"客户端 {client_host} 已断开连接，终止审核任务")
                     return True
                 
@@ -240,27 +240,7 @@ async def get_api_usage(request_info: Request):
         logger.error(f"获取API使用情况过程中发生错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/v1/balance", response_model=APIBalanceResponse)
-async def get_api_balance(request_info: Request):
-    """
-    获取DeepSeek API余额信息
-    """
-    logger.info("开始获取DeepSeek API余额信息")
-    checker = SMSChecker()
 
-    try:
-        # 获取客户端信息
-        client_host = request_info.client.host if request_info.client else "未知客户端"
-        client_info = f"客户端IP: {client_host}"
-        logger.info(f"接收到来自 {client_info} 的API余额信息请求")
-        
-        # 获取API余额信息
-        result = checker.get_api_balance()
-        logger.info(f"API余额信息获取成功: {result.balance if result.balance else 'NA'}")
-        return result
-    except Exception as e:
-        logger.error(f"获取API余额信息过程中发生错误: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
     
 # 如果直接运行该文件，启动 API 服务器
 if __name__ == "__main__":

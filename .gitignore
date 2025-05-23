@@ -4,22 +4,56 @@ __pycache__/
 *$py.class
 *.so
 .Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
 .env
 .venv
-env/
 venv/
 ENV/
-sms_check_env/
-*.ipynb_checkpoints
-*.ipynb
+env/
 
-# IDE
+# IDE相关
 .idea/
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 *.swp
 *.swo
 
-# OS
+# 日志
+*.log
+logs/
+
+# 本地配置
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 缓存
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 其他
 .DS_Store
 Thumbs.db
 
