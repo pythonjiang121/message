@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r req
 
 
 # 复制应用代码
-COPY checkAPI.py ai_check.py ai_audit_prompt.py ./
+COPY checkAPI.py ai_check.py ai_audit_prompt.py balance_monitor.py ./
 
 # 创建日志和数据目录
 RUN mkdir -p logs data

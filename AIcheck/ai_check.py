@@ -3,10 +3,7 @@ import json
 from typing import Dict, Tuple, List
 import logging
 import re
-# import numpy as np
 from ai_audit_prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE, BUSINESS_SPECIFIC_RULES
-# from sentence_transformers import SentenceTransformer
-# import faiss
 
 
 # 配置日志
@@ -38,38 +35,18 @@ class AIAuditor:
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         
-        # # 向量化和缓存相关设置
-        # self.vector_enabled = True
-        # if self.vector_enabled:
-        #     # 初始化文本向量化模型
-        #     try:
-        #         # 模型参数设置
-        #         self.model_name = 'BAAI/bge-small-zh-v1.5'  # 更改为你要使用的模型
-        #         self.normalize_vectors = True  # BAAI模型推荐归一化向量
-                
-        #         logging.info(f"正在加载模型: {self.model_name}")
-        #         self.embedder = SentenceTransformer(self.model_name)
-                
-        #         # 通过测试获取实际向量维度
-        #         test_text = "测试文本"
-        #         test_vector = self.embedder.encode([test_text], show_progress_bar=False)[0]
-        #         self.vector_dim = test_vector.shape[0]
-        #         logging.info(f"成功加载模型: {self.model_name}, 向量维度: {self.vector_dim}")
-                
-        #         # 初始化向量索引
-        #         self.index = faiss.IndexFlatL2(self.vector_dim)
-                
-        #         # 初始化缓存
-        #         self.sms_cache = []  # 存储短信文本
-        #         self.result_cache = []  # 存储对应审核结果
-        #         self.similarity_threshold = 0.4  # 相似度阈值
-        #         logging.info("向量化和缓存功能已初始化")
-        #     except Exception as e:
-        #         import traceback
-        #         self.vector_enabled = False
-        #         logging.error(f"向量化功能初始化失败: {str(e)}\n{traceback.format_exc()}")
-        # else:
-        #     logging.info("向量化功能未启用，将使用常规审核方法")
+        # 企业微信机器人配置
+        self.wecom_webhook = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=30ffc3b2-da6e-421b-9b24-b3d3cc51f8d3"
+        
+        # 余额告警阈值，单位：人民币
+        self.balance_alert_threshold = 10.0
+        
+        # 上次发送告警的时间，避免频繁告警
+        self.last_alert_time = 0
+        # 告警间隔，默认4小时
+        self.alert_interval = 4 * 60 * 60  # 4小时，单位：秒
+        
+
 
     def _process_api_response(self, response, method_name=""):
         """
@@ -206,260 +183,171 @@ class AIAuditor:
             logging.error(f"AI审核过程出错: {str(e)}")
             return False, {"error": str(e)}
 
-    # def batch_audit(self, sms_list: List[Dict]) -> List[Dict]:
-    #     """
-    #     批量审核短信
+    def check_api_balance(self, is_scheduled_check=False) -> Dict:
+        """
+        查询DeepSeek API的余额和使用情况
         
-    #     Args:
-    #         sms_list: 短信列表，每个元素包含 signature, content, business_type
+        Args:
+            is_scheduled_check: 是否为定时检查，只有定时检查才会触发告警，默认为False
             
-    #     Returns:
-    #         List[Dict]: 审核结果列表，每个元素包含 sms, passed, details
-    #     """
-    #     results = []
-    #     cache_hits = 0
-        
-    #     # 重置token计数器
-    #     self.total_tokens_used = 0
-    #     self.total_input_tokens = 0
-    #     self.total_output_tokens = 0
-        
-    #     # 记录开始时间和缓存命中计数
-    #     import time
-    #     start_time = time.time()
-        
-    #     logging.info(f"开始批量审核 {len(sms_list)} 条短信")   
-        
-    #     for i, sms in enumerate(sms_list):
-    #         try:
-    #             # 记录进度
-    #             if i % 10 == 0 or i == len(sms_list) - 1:
-    #                 elapsed = time.time() - start_time
-    #                 avg_time = elapsed / (i + 1) if i > 0 else 0
-    #                 eta = avg_time * (len(sms_list) - i - 1) if i > 0 else 0
-    #                 hit_rate = (cache_hits / (i + 1)) * 100 if i >= 0 else 0
-    #                 logging.info(f"进度: {i+1}/{len(sms_list)} [{hit_rate:.1f}% 缓存命中] [平均 {avg_time:.2f}秒/条] [预计剩余 {eta:.0f}秒]")
+        Returns:
+            Dict: API余额和使用情况信息
+        """
+        try:
+            # DeepSeek API余额查询接口
+            balance_endpoint = "https://api.deepseek.com/user/balance"
+            
+            # 发送请求
+            response = requests.get(
+                balance_endpoint,
+                headers=self.headers
+            )
+            
+            if response.status_code == 200:
+                balance_info = response.json()
+                logging.info(f"API余额查询成功: {balance_info}")
                 
-    #             # 不论是否启用向量化，都调用audit_sms_with_cache
-    #             # 该方法内部会处理是否使用缓存的逻辑
-    #             passed, details = self.audit_sms_with_cache(
-    #                 sms["signature"], 
-    #                 sms["content"], 
-    #                 sms["business_type"]
-    #             )
+                # 只有定时检查才会触发告警
+                if is_scheduled_check:
+                    self._check_balance_alert(balance_info, is_scheduled_check)
                 
-    #             # 检查是否命中缓存(仅用于统计)
-    #             if isinstance(details, dict) and details.get("cached", False):
-    #                 cache_hits += 1
+                return balance_info
+            else:
+                error_msg = f"API余额查询失败: {response.status_code}"
+                if hasattr(response, 'text'):
+                    error_msg += f", {response.text}"
+                logging.error(error_msg)
+                return {"error": error_msg}
                 
-    #             # 添加结果
-    #             results.append({
-    #                 "sms": sms,
-    #                 "passed": passed,
-    #                 "details": details
-    #             })
-                
-    #         except Exception as e:
-    #             logging.error(f"审核第 {i+1} 条短信时出错: {str(e)}")
-    #             # 添加错误结果，确保结果列表的长度与输入一致
-    #             results.append({
-    #                 "sms": sms,
-    #                 "passed": False,  # 出错时默认不通过
-    #                 "details": {"error": str(e)}
-    #             })
-        
-    #     # 计算缓存命中率
-    #     if self.vector_enabled:
-    #         hit_rate = (cache_hits / len(sms_list)) * 100 if len(sms_list) > 0 else 0
-    #         logging.info(f"缓存命中: {cache_hits}/{len(sms_list)} ({hit_rate:.1f}%)")
-        
-    #     # 记录总token使用情况
-    #     total_time = time.time() - start_time
-    #     logging.info(f"批量审核完成，共处理 {len(results)} 条短信，总耗时: {total_time:.2f}秒，平均每条: {total_time/len(results):.2f}秒")
-    #     logging.info(f"总Token消耗: 输入={self.total_input_tokens}, 输出={self.total_output_tokens}, 总计={self.total_tokens_used}")
-    #     logging.info(f"平均每条短信Token消耗: {self.total_tokens_used / len(results) if results else 0:.2f}")
-        
-    #     return results
+        except Exception as e:
+            logging.error(f"查询API余额出错: {str(e)}")
+            return {"error": str(e)}
     
-    # def audit_sms_with_cache(self, signature: str, content: str, business_type: str) -> Tuple[bool, Dict]:
-    #     """
-    #     带缓存的短信AI审核
+    def _check_balance_alert(self, balance_info: Dict, is_scheduled_check=False) -> None:
+        """
+        检查余额是否低于阈值，如果是则发送企业微信告警
         
-    #     Args:
-    #         signature: 短信签名
-    #         content: 短信内容
-    #         business_type: 业务类型
+        Args:
+            balance_info: API余额信息
+            is_scheduled_check: 是否为定时检查，只有定时检查才会触发告警
+        """
+        try:
+            # 非定时检查不发送告警
+            if not is_scheduled_check:
+                return
+                
+            # 提取余额信息
+            balance = None
+            currency = ""
             
-    #     Returns:
-    #         Tuple[bool, Dict]: (是否通过审核, 审核结果详情)
-    #     """
-    #     try:
-    #         # 首先进行中括号检测
-    #         left_brackets = content.count('【')
-    #         right_brackets = content.count('】')
-    #         if left_brackets > 1 or right_brackets > 1:
-    #             return False, {
-    #                 "should_pass": False,
-    #                 "risk_areas": ["多重签名"],
-    #                 "reasons": ["短信内容中包含多个中文中括号，不符合规范"],
-    #                 "token_usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
-    #                 "api_time": 0,
-    #                 "from_cache": False
-    #             }
-
-    #         # 检查是否命中缓存
-    #         if self.vector_enabled:
-    #             try:
-    #                 cached_result, similarity = self.find_similar_sms(f"{signature} {content} {business_type}")
+            # 根据DeepSeek API文档的格式解析
+            if "is_available" in balance_info and "balance_infos" in balance_info:
+                if balance_info["is_available"] and len(balance_info["balance_infos"]) > 0:
+                    # 获取第一个货币的余额信息
+                    balance_data = balance_info["balance_infos"][0]
+                    currency = balance_data["currency"]
                     
-    #                 if cached_result:
-    #                     logging.info(f"从缓存获取结果，相似度: {similarity:.4f}")
-                        
-    #                     # 添加缓存标记到结果中
-    #                     result_copy = cached_result.copy()
-    #                     if "details" in result_copy and isinstance(result_copy["details"], dict):
-    #                         if "cached" not in result_copy["details"]:
-    #                             result_copy["details"]["cached"] = True
-    #                             result_copy["details"]["similarity_score"] = float(similarity)
-                        
-    #                     return result_copy["passed"], result_copy["details"]
-    #             except Exception as e:
-    #                 logging.warning(f"从缓存获取结果失败: {str(e)}，将直接调用API")
+                    # 获取总余额
+                    if "total_balance" in balance_data:
+                        balance = float(balance_data["total_balance"])
             
-    #         # 没有缓存命中或缓存检索出错，调用API审核
-    #         passed, result = self.audit_sms(signature, content, business_type)
+            if balance is None:
+                logging.warning("无法从响应中提取余额信息")
+                return
             
-    #         # 如果向量化功能启用，缓存结果
-    #         if self.vector_enabled:
-    #             try:
-    #                 self.cache_result(f"{signature} {content} {business_type}", {
-    #                     "passed": passed,
-    #                     "details": result
-    #                 })
-    #             except Exception as e:
-    #                 logging.warning(f"缓存结果失败: {str(e)}")
-            
-    #         return passed, result
-    #     except Exception as e:
-    #         logging.error(f"带缓存的短信AI审核失败: {str(e)}")
-    #         return False, {"error": str(e)}
-    
-
-    # def get_embedding(self, text):
-    #     """
-    #     将文本转换为向量
-        
-    #     Args:
-    #         text: 要向量化的文本
-            
-    #     Returns:
-    #         numpy.ndarray: 文本向量
-    #     """
-    #     if not self.vector_enabled:
-    #         return None
-            
-    #     try:
-    #         # 获取向量
-    #         vector = self.embedder.encode([text], show_progress_bar=False)[0]
-            
-    #         # 检查向量的形状和类型
-    #         logging.debug(f"获取到向量: shape={vector.shape}, dtype={vector.dtype}")
-            
-    #         # BAAI模型可能需要的额外处理（如归一化）
-    #         # 某些BAAI模型推荐对向量进行归一化处理，提高结果质量
-    #         vector_norm = np.linalg.norm(vector)
-    #         if vector_norm > 0:
-    #             vector = vector / vector_norm
-    #             logging.debug("向量已归一化")
-            
-    #         return vector
-    #     except Exception as e:
-    #         import traceback
-    #         logging.error(f"文本向量化失败: {str(e)}\n{traceback.format_exc()}")
-    #         return None
-    
-            
-    # def find_similar_sms(self, sms_text):
-    #     """
-    #     在缓存中查找相似短信
-        
-    #     Args:
-    #         sms_text: 短信文本
-            
-    #     Returns:
-    #         tuple: (缓存的结果, 相似度) 如果没有找到则为 (None, -1)
-    #     """
-    #     if not self.vector_enabled or len(self.sms_cache) == 0:
-    #         return None, -1
-            
-    #     try:
-    #         query_vector = self.get_embedding(sms_text)
-    #         if query_vector is None:
-    #             logging.warning("无法搜索相似短信：向量为None")
-    #             return None, -1
+            # 只处理人民币账户，忽略美元账户
+            if currency != "CNY":
+                logging.info(f"当前账户货币不是人民币，跳过告警检查（当前货币: {currency}）")
+                return
                 
-    #         # 确保向量是正确的形状和类型
-    #         query_vector = np.array([query_vector], dtype=np.float32)
-            
-    #         logging.debug(f"搜索向量形状: {query_vector.shape}, 索引大小: {self.index.ntotal}")
-            
-    #         # 搜索最相似的短信
-    #         distances, indices = self.index.search(query_vector, 1)
-            
-    #         if len(indices) > 0 and len(indices[0]) > 0:
-    #             best_idx = indices[0][0]
-    #             distance = distances[0][0]
-    #             logging.debug(f"找到最佳匹配: idx={best_idx}, distance={distance}, threshold={self.similarity_threshold}")
+            # 设置告警阈值（10元人民币）
+            threshold = 10.0
                 
-    #             if distance < self.similarity_threshold:
-    #                 if 0 <= best_idx < len(self.result_cache):
-    #                     return self.result_cache[best_idx], distance
-    #                 else:
-    #                     logging.warning(f"索引越界: {best_idx} 不在结果缓存范围内 (0-{len(self.result_cache)-1})")
-    #             else:
-    #                 logging.debug(f"相似度不足: {distance} > {self.similarity_threshold}")
+            import time
+            current_time = time.time()
+            
+            # 如果余额低于阈值且距离上次告警时间超过间隔，则发送告警
+            if balance < threshold and current_time - self.last_alert_time > self.alert_interval:
+                logging.info(f"余额低于阈值，当前余额: ¥{balance:.2f}，阈值: ¥{threshold:.2f}")
                 
-    #         return None, -1
-    #     except Exception as e:
-    #         import traceback
-    #         logging.error(f"查找相似短信失败: {str(e)}\n{traceback.format_exc()}")
-    #         return None, -1
+                # 格式化告警消息
+                alert_msg = (
+                    f"⚠️ **DeepSeek API余额告警**\n\n"
+                    f"当前余额: ¥{balance:.2f}\n"
+                    f"告警阈值: ¥{threshold:.2f}\n\n"
+                )
+                
+                # 添加赠金和充值余额信息
+                if "granted_balance" in balance_info["balance_infos"][0] and "topped_up_balance" in balance_info["balance_infos"][0]:
+                    granted = float(balance_info["balance_infos"][0]["granted_balance"])
+                    topped_up = float(balance_info["balance_infos"][0]["topped_up_balance"])
+                    
+                    alert_msg += f"充值余额: ¥{topped_up:.2f}\n"
+                    alert_msg += f"赠金余额: ¥{granted:.2f}\n\n"
+                
+                alert_msg += "请及时充值，以免影响服务!"
+                
+                # 发送企业微信告警
+                self._send_wecom_alert(alert_msg)
+                
+                # 更新上次告警时间
+                self.last_alert_time = current_time
+                
+                logging.info(f"余额告警已发送，当前余额: ¥{balance:.2f}")
+            else:
+                if balance < threshold:
+                    logging.info(f"余额低于阈值，但距离上次告警时间未超过{self.alert_interval/3600:.1f}小时，不发送告警")
+                else:
+                    logging.info(f"余额正常，当前余额: ¥{balance:.2f}")
+        except Exception as e:
+            logging.error(f"余额告警检查失败: {str(e)}")
     
-    # def cache_result(self, sms_text, result):
-    #     """
-    #     缓存审核结果
+    def _send_wecom_alert(self, message: str) -> None:
+        """
+        发送企业微信告警
         
-    #     Args:
-    #         sms_text: 短信文本
-    #         result: 审核结果
-    #     """
-    #     if not self.vector_enabled:
-    #         return
+        Args:
+            message: 告警消息
+        """
+        try:
+            # 构建告警消息
+            data = {
+                "msgtype": "markdown",
+                "markdown": {
+                    "content": message
+                }
+            }
             
-    #     try:
-    #         vector = self.get_embedding(sms_text)
-    #         if vector is None:
-    #             logging.warning("无法缓存结果：向量为None")
-    #             return
+            # 发送请求
+            response = requests.post(
+                self.wecom_webhook,
+                headers={"Content-Type": "application/json"},
+                data=json.dumps(data)
+            )
             
-    #         # 打印向量信息用于调试
-    #         logging.debug(f"向量类型: {type(vector)}, 形状: {vector.shape}, 维度: {self.vector_dim}")
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("errcode") == 0:
+                    logging.info("企业微信告警发送成功")
+                else:
+                    logging.error(f"企业微信告警发送失败: {result}")
+            else:
+                logging.error(f"企业微信告警发送失败，状态码: {response.status_code}")
+        except Exception as e:
+            logging.error(f"发送企业微信告警失败: {str(e)}")
             
-    #         # 确保向量是正确的形状和类型
-    #         vector = np.array([vector], dtype=np.float32)
-            
-    #         # 打印转换后的向量信息
-    #         logging.debug(f"处理后向量形状: {vector.shape}, dtype: {vector.dtype}")
-            
-    #         # 添加到FAISS索引中
-    #         self.index.add(vector)
-    #         self.sms_cache.append(sms_text)
-    #         self.result_cache.append(result)
-            
-    #         logging.debug(f"结果已缓存，当前缓存大小: {len(self.sms_cache)}")
-    #     except Exception as e:
-    #         import traceback
-    #         logging.error(f"缓存结果失败: {str(e)}\n{traceback.format_exc()}")
-            
-    
+    # 添加获取token使用统计的方法
+    def get_token_usage_stats(self) -> Dict:
+        """
+        获取当前实例的token使用统计
+        
+        Returns:
+            Dict: token使用统计信息
+        """
+        return {
+            "total_tokens_used": self.total_tokens_used,
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+            "average_cost_estimate": self.total_tokens_used * 0.0001  # 假设每千tokens的成本为0.1人民币
+        }
 

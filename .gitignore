@@ -10,7 +10,8 @@ env/
 venv/
 ENV/
 sms_check_env/
-
+*.ipynb_checkpoints
+*.ipynb
 
 # IDE
 .idea/
@@ -30,14 +31,16 @@ Thumbs.db
 logs/
 data/
 .pytest_cache/
-# 添加可能生成的文件
+
+# 临时文件和输出
 *.out
 *.json
 *.pickle
-*.npy
 output/
 results/
 runs/
-.png
-.jpg
+
+# 图片文件
+*.png
+*.jpg
 

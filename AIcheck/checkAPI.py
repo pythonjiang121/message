@@ -1,6 +1,6 @@
 import asyncio
 from typing import Dict, List, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 import uvicorn
 from ai_check import AIAuditor
@@ -23,6 +23,17 @@ class BatchSMSRequest(BaseModel):
 class BatchSMSResponse(BaseModel):
     results: List[SMSResponse]
     statistics: Dict[str, int]
+
+class APIUsageResponse(BaseModel):
+    api_balance: Dict
+    token_usage: Dict
+    status: str
+
+class APIBalanceResponse(BaseModel):
+    balance: Optional[float]
+    balance_info: Dict
+    status: str
+    message: str
 
 class SMSChecker:
     def __init__(self):
@@ -60,6 +71,77 @@ class SMSChecker:
         )
 
         return response
+        
+    def get_api_usage(self) -> APIUsageResponse:
+        """
+        获取API使用情况
+        
+        Returns:
+            APIUsageResponse: API使用情况响应对象
+        """
+        # 获取API余额信息
+        api_balance = self.ai_auditor.check_api_balance()
+        
+        # 获取token使用统计
+        token_usage = self.ai_auditor.get_token_usage_stats()
+        
+        # 初始化响应对象
+        response = APIUsageResponse(
+            api_balance=api_balance,
+            token_usage=token_usage,
+            status="成功" if "error" not in api_balance else "失败"
+        )
+        
+        return response
+        
+    def get_api_balance(self) -> APIBalanceResponse:
+        """
+        获取DeepSeek API余额信息
+        
+        Returns:
+            APIBalanceResponse: API余额信息响应对象
+        """
+        # 获取API余额信息
+        balance_info = self.ai_auditor.check_api_balance()
+        
+        # 提取余额
+        balance = None
+        message = "获取余额成功"
+        currency = "USD"
+        
+        if "error" not in balance_info:
+            try:
+                # 根据DeepSeek API文档的格式解析
+                if "is_available" in balance_info and "balance_infos" in balance_info:
+                    if balance_info["is_available"] and len(balance_info["balance_infos"]) > 0:
+                        # 获取第一个货币的余额信息
+                        balance_data = balance_info["balance_infos"][0]
+                        currency = balance_data["currency"]
+                        
+                        # 获取总余额
+                        if "total_balance" in balance_data:
+                            raw_balance = float(balance_data["total_balance"])
+                            
+                            # 如果是人民币，转换为美元（仅用于对比阈值）
+                            if currency == "CNY":
+                                balance = raw_balance / 7.2
+                                logger.info(f"人民币余额 ¥{raw_balance:.2f} 约等于 ${balance:.2f}")
+                            else:
+                                balance = raw_balance
+            except (KeyError, ValueError) as e:
+                message = f"解析余额信息出错: {str(e)}"
+        else:
+            message = balance_info.get("error", "未知错误")
+        
+        # 初始化响应对象
+        response = APIBalanceResponse(
+            balance=balance,
+            balance_info=balance_info,
+            status="成功" if balance is not None else "失败",
+            message=message
+        )
+        
+        return response
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -73,44 +155,113 @@ async def root():
     return {"message": "欢迎使用短信审核 API 服务"}
 
 @app.post("/api/v1/check", response_model=SMSResponse)
-async def checkAPI_single_sms(request: SMSRequest):
+async def checkAPI_single_sms(request: SMSRequest, request_info: Request):
     """
     审核单条短信内容
     """
     logger.info(f"开始审核单条短信: {request.signature} - {request.content}")
     checker = SMSChecker()
-    # 同步运行
-    # result = checker.check_sms(
-    #     request.signature,
-    #     request.content,
-    #     request.business_type
-    # )
-    # 异步运行
+
     try:
-        result = await asyncio.to_thread(
+        # 获取客户端信息
+        client_host = request_info.client.host if request_info.client else "未知客户端"
+        client_info = f"客户端IP: {client_host}"
+        logger.info(f"接收到来自 {client_info} 的审核请求")
+        
+        # 创建一个任务来监控客户端连接状态
+        async def check_connection():
+            while True:
+                await asyncio.sleep(1)
+                # 如果客户端已断开连接，则取消审核任务
+                if not request_info.client or getattr(request_info.client, 'disconnected', False):
+                    logger.warning(f"客户端 {client_host} 已断开连接，终止审核任务")
+                    return True
+                
+        
+        # 创建审核任务
+        audit_task = asyncio.create_task(asyncio.to_thread(
             checker.check_sms,
             request.signature,
             request.content,
             request.business_type
+        ))
+        
+        # 创建连接监控任务
+        connection_task = asyncio.create_task(check_connection())
+        
+        # 等待任一任务完成
+        done, pending = await asyncio.wait(
+            [audit_task, connection_task],
+            return_when=asyncio.FIRST_COMPLETED
         )
+        
+        # 取消未完成的任务
+        for task in pending:
+            task.cancel()
+        
+        # 如果是连接监控任务先完成，说明客户端已断开
+        if connection_task in done and await connection_task:
+            raise asyncio.CancelledError("客户端已断开连接")
+        
+        # 获取审核结果
+        result = await audit_task
         logger.info(f"审核结果: {result}")
         return result
+    except asyncio.CancelledError as e:
+        logger.warning(f"审核任务已取消: {str(e)}")
+        return SMSResponse(
+            passed=False,
+            status="已取消",
+            business_reason="客户端已断开连接，审核任务已取消"
+        )
     except Exception as e:
         logger.error(f"审核过程中发生错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# @app.post("/api/v1/batch-check", response_model=BatchSMSResponse)
-# async def check_batch_sms(request: BatchSMSRequest):
-#     """
-#     批量审核多条短信内容
-#     """
-#     if len(request.sms_list) == 0:
-#         raise HTTPException(status_code=400, detail="短信列表不能为空")
-        
-#     checker = SMSChecker()
-#     results = []
-    
+@app.get("/api/v1/usage", response_model=APIUsageResponse)
+async def get_api_usage(request_info: Request):
+    """
+    获取API使用情况
+    """
+    logger.info("开始获取API使用情况")
+    checker = SMSChecker()
 
+    try:
+        # 获取客户端信息
+        client_host = request_info.client.host if request_info.client else "未知客户端"
+        client_info = f"客户端IP: {client_host}"
+        logger.info(f"接收到来自 {client_info} 的API使用情况请求")
+        
+        # 获取API使用情况
+        result = checker.get_api_usage()
+        logger.info(f"API使用情况获取成功")
+        return result
+    except Exception as e:
+        logger.error(f"获取API使用情况过程中发生错误: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/balance", response_model=APIBalanceResponse)
+async def get_api_balance(request_info: Request):
+    """
+    获取DeepSeek API余额信息
+    """
+    logger.info("开始获取DeepSeek API余额信息")
+    checker = SMSChecker()
+
+    try:
+        # 获取客户端信息
+        client_host = request_info.client.host if request_info.client else "未知客户端"
+        client_info = f"客户端IP: {client_host}"
+        logger.info(f"接收到来自 {client_info} 的API余额信息请求")
+        
+        # 获取API余额信息
+        result = checker.get_api_balance()
+        logger.info(f"API余额信息获取成功: {result.balance if result.balance else 'NA'}")
+        return result
+    except Exception as e:
+        logger.error(f"获取API余额信息过程中发生错误: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
 # 如果直接运行该文件，启动 API 服务器
 if __name__ == "__main__":
     uvicorn.run("checkAPI:app", host="0.0.0.0", port=8000, reload=True)

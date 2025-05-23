@@ -7,9 +7,10 @@ alwaysApply: true
 # 规则
 
 [ai_check.py](mdc:AIcheck/ai_check.py) [ai_audit_prompt.py](mdc:AIcheck/ai_audit_prompt.py) [checkAPI.py](mdc:AIcheck/checkAPI.py) [setup_env.sh](mdc:AIcheck/setup_env.sh) [docker-deploy.sh](mdc:AIcheck/docker-deploy.sh)
-[docker-compose.yml](mdc:AIcheck/docker-compose.yml) [Dockerfile](mdc:AIcheck/Dockerfile)
+[docker-compose.yml](mdc:AIcheck/docker-compose.yml) [Dockerfile](mdc:AIcheck/Dockerfile) 
 - 使用中文
 - 你是一个python、Fast-api、docker部署项目专家
-- 撰写专业、简洁的回复
+- 撰写专业、简洁的回复，不要使用“可能”
 - 使用函数式、声明式编程
-- 
+- 给出最有效的方法，不要反复编码
+- 选择方法后生成文件
