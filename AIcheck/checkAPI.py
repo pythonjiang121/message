@@ -107,27 +107,23 @@ class SMSChecker:
         # 提取余额
         balance = None
         message = "获取余额成功"
-        currency = "USD"
+        currency = "CNY"
         
         if "error" not in balance_info:
             try:
                 # 根据DeepSeek API文档的格式解析
                 if "is_available" in balance_info and "balance_infos" in balance_info:
                     if balance_info["is_available"] and len(balance_info["balance_infos"]) > 0:
-                        # 获取第一个货币的余额信息
-                        balance_data = balance_info["balance_infos"][0]
-                        currency = balance_data["currency"]
-                        
-                        # 获取总余额
-                        if "total_balance" in balance_data:
-                            raw_balance = float(balance_data["total_balance"])
-                            
-                            # 如果是人民币，转换为美元（仅用于对比阈值）
-                            if currency == "CNY":
-                                balance = raw_balance / 7.2
-                                logger.info(f"人民币余额 ¥{raw_balance:.2f} 约等于 ${balance:.2f}")
-                            else:
-                                balance = raw_balance
+                        # 遍历找到人民币余额
+                        for balance_data in balance_info["balance_infos"]:
+                            if balance_data["currency"] == "CNY":
+                                currency = "CNY"
+                                
+                                # 获取总余额
+                                if "total_balance" in balance_data:
+                                    balance = float(balance_data["total_balance"])
+                                    logger.info(f"人民币余额: ¥{balance:.2f}")
+                                    break
             except (KeyError, ValueError) as e:
                 message = f"解析余额信息出错: {str(e)}"
         else:

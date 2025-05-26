@@ -1,10 +1,15 @@
 import requests
 import json
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple
 import logging
 import re
 from ai_audit_prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE, BUSINESS_SPECIFIC_RULES
 
+# 全局配置参数
+# 这些参数将被所有使用AI审核的组件共享
+BALANCE_CHECK_INTERVAL = 3600  # 余额检查间隔（秒），默认为1小时
+BALANCE_ALERT_THRESHOLD = 10.0  # 余额告警阈值（人民币元），默认为10元
+BALANCE_ALERT_INTERVAL = 4 * 60 * 60  # 余额告警间隔（秒），默认为4小时
 
 # 配置日志
 logging.basicConfig(
@@ -38,13 +43,13 @@ class AIAuditor:
         # 企业微信机器人配置
         self.wecom_webhook = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=30ffc3b2-da6e-421b-9b24-b3d3cc51f8d3"
         
-        # 余额告警阈值，单位：人民币
-        self.balance_alert_threshold = 10.0
+        # 使用全局配置参数
+        self.balance_alert_threshold = BALANCE_ALERT_THRESHOLD
         
         # 上次发送告警的时间，避免频繁告警
         self.last_alert_time = 0
-        # 告警间隔，默认4小时
-        self.alert_interval = 4 * 60 * 60  # 4小时，单位：秒
+        # 告警间隔，使用全局配置
+        self.alert_interval = BALANCE_ALERT_INTERVAL
         
 
 
@@ -260,8 +265,8 @@ class AIAuditor:
                 logging.info(f"当前账户货币不是人民币，跳过告警检查（当前货币: {currency}）")
                 return
                 
-            # 设置告警阈值（10元人民币）
-            threshold = 10.0
+            # 使用全局配置的告警阈值
+            threshold = self.balance_alert_threshold
                 
             import time
             current_time = time.time()
